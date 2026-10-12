@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
   },
   cacheComponents: true,
   partialPrefetching: true,
+  serverExternalPackages: ["@prisma/client", "bcrypt", "mariadb"],
   turbopack: {
     rules: {
       "*.css": {

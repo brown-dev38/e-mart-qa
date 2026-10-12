@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model users {
+  id                    Int       @id @default(autoincrement())
+  refId                 String?   @unique @db.VarChar(191)
+  username              String    @db.Text
+  email                 String?   @unique @db.VarChar(191)
+  password_hash         String?   @db.VarChar(255)
+  email_verified_at     DateTime? @db.DateTime(0)
+  password_changed_at   DateTime? @db.DateTime(0)
+  last_login_at         DateTime? @db.DateTime(0)
+  must_change_password  Boolean   @default(false)
+  failed_login_attempts Int       @default(0)
+  locked_until          DateTime? @db.DateTime(0)
+  citizen_id            String?   @db.Text
+  firstname             String?   @db.Text
+  lastname              String?   @db.Text
+  role_id               Int?
+  department_id         Int?
+  position_id           Int?
+  isActive              Boolean   @default(true)
+  created_at            DateTime  @db.DateTime(0)
+  updated_at            DateTime  @db.DateTime(0)
+
+  role                   role?                 @relation(fields: [role_id], references: [id])
+  department             department?           @relation(fields: [department_id], references: [id])
+  position               position?             @relation(fields: [position_id], references: [id])
+}
+
+model department {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.Text
+  isActive      Boolean  @default(true)
+  employee_id   Int
+  created_at    DateTime @db.DateTime(0)
+  updated_at    DateTime @db.DateTime(0)
+
+  users users[]
+}
+
+model role {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.Text
+  isActive      Boolean  @default(true)
+  employee_id   Int
+  created_at    DateTime @db.DateTime(0)
+  updated_at    DateTime @db.DateTime(0)
+
+  users users[]
+}
+
+model position {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.Text
+  isActive      Boolean  @default(true)
+  employee_id   Int
+  created_at    DateTime @db.DateTime(0)
+  updated_at    DateTime @db.DateTime(0)
+
+  users users[]
+}
+
+

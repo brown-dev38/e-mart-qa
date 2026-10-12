@@ -1,0 +1,11 @@
+# Taste
+- Communicates in Thai; prefers responses written in Thai. Confidence: 0.75
+- Prefers substantive analysis/documentation deliverables persisted as markdown files in the repo (written next to the source being analyzed) rather than living only in chat. Confidence: 0.7
+- Asks for a written "timeline of the fix" (ไทม์ไลน์การแก้ไข) after a debugging session: a standalone notes doc recording root cause, ordered steps with the exact commands and their errors/successes, the resulting changes, and follow-up usage/notes. Confidence: 0.6
+- After a day of project work, requests a written worklog (reference) summarizing what was done — sections covering analysis, setup, auth, styling, verification results, a created/modified files listing, and pending items — persisted as a Thai markdown file at the project root named like `WORKLOG-YYYY-MM-DD.md`. Confidence: 0.6
+- Likes such notes files written in Thai at the project root with an uppercase hyphenated topic name (e.g. `PRISMA-SETUP-NOTES.md`), sectioned with markdown tables for command → result. Confidence: 0.5
+- Prefers reviewing a written migration/implementation plan before any code is written (opt-in to plan mode / "plan before action"), rather than jumping straight into implementation. Confidence: 0.6
+- Prefers stable, mainstream dependency versions over pre-release/RC builds — when a Prisma 8 RC caused CLI friction, chose to downgrade to Prisma 7 stable rather than adapt to the RC workflow. Confidence: 0.5
+- Chose `bcrypt` (native module, with `@types/bcrypt`) over `bcryptjs`/`argon2` for hashing passwords in seed/auth code, even when warned it is slower/native-build. Confidence: 0.6
+- When offered scope options for a feature, prefers the complete end-to-end deliverable (build the UI with all states AND wire it to real backend/auth) over a demo/mock or design-only version. Confidence: 0.5
+- For the e-SMART QA project, fixes the brand accent/primary color to `#016d53` (deep teal) — applies to all UI in that project. Confidence: 0.6
