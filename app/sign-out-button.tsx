@@ -1,15 +1,57 @@
 "use client";
 
 import { signOut } from "next-auth/react";
+import { Button } from "antd";
+import { LoaderCircle, LogOut } from "lucide-react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 
-export default function SignOutButton() {
+export default function SignOutButton({ className }: { className?: string }) {
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
+
   return (
-    <button
-      type="button"
-      onClick={() => signOut({ callbackUrl: "/login" })}
-      className="rounded-lg border border-line bg-paper px-3.5 py-2 text-[13px] font-medium text-ink transition hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+    <Button
+      htmlType="button"
+      loading={
+        pending
+          ? {
+              icon: (
+                <LoaderCircle
+                  size={16}
+                  className="animate-spin"
+                  aria-hidden="true"
+                />
+              ),
+            }
+          : false
+      }
+      icon={<LogOut size={16} aria-hidden="true" />}
+      onClick={async () => {
+        if (pending) return;
+        setPending(true);
+        toast.loading("กำลังออกจากระบบ…", { id: "auth" });
+        try {
+          const result = await signOut({
+            callbackUrl: "/login",
+            redirect: false,
+          });
+          if (!result?.url) throw new Error("Sign-out failed");
+          toast.success("ออกจากระบบสำเร็จ", { id: "auth" });
+          router.replace("/login");
+          router.refresh();
+        } catch {
+          toast.error("ออกจากระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", {
+            id: "auth",
+          });
+        } finally {
+          setPending(false);
+        }
+      }}
+      className={className}
     >
       ออกจากระบบ
-    </button>
+    </Button>
   );
 }

@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
-import SignOutButton from "./sign-out-button";
+import { connection } from "next/server";
+import Dashboard from "./dashboard";
 
 export const instant = false;
 
@@ -10,6 +11,7 @@ const roleLabel: Record<string, string> = {
 };
 
 export default async function Home() {
+  await connection();
   const session = await auth();
 
   if (!session?.user) {
@@ -29,34 +31,13 @@ export default async function Home() {
   }
 
   const { name, role } = session.user;
-  const roleText = role ? roleLabel[role] ?? role : "ไม่ระบุบทบาท";
+  const roleText = role ? (roleLabel[role] ?? role) : "ไม่ระบุบทบาท";
 
   return (
-    <div className="min-h-dvh">
-      <header className="flex items-center justify-between gap-4 border-b border-line bg-paper px-6 py-4 sm:px-10">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.16em] text-muted">
-            คณะแพทยศาสตร์ · มหาวิทยาลัยพะเยา
-          </p>
-          <p className="text-lg font-semibold tracking-tight text-ink">e-SMART QA</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="hidden text-right sm:block">
-            <p className="text-sm font-medium text-ink">{name}</p>
-            <p className="text-[12px] text-muted">{roleText}</p>
-          </div>
-          <SignOutButton />
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-5xl px-6 py-14 sm:px-10">
-        <p className="text-[11px] uppercase tracking-[0.16em] text-muted">ยินดีต้อนรับ</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">เข้าสู่ระบบสำเร็จ</h1>
-        <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-          บัญชี <span className="font-medium text-ink">{name}</span> ได้รับสิทธิ์ในระดับ {roleText}
-          ระบบงานหลัก (SAR, กระบวนการ, ตัวชี้วัด, เอกสารคุณภาพ) จะแสดงในส่วนถัดไป
-        </p>
-      </main>
-    </div>
+    <Dashboard
+      userId={session.user.id}
+      name={name || "ผู้ใช้งาน"}
+      role={roleText}
+    />
   );
 }

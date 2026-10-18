@@ -1,7 +1,9 @@
+@layer theme, base, antd, components, utilities;
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-sarabun), ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    var(--font-inter), var(--font-kanit), ui-sans-serif, system-ui, sans-serif;
 
   --color-canvas: #eef3f1;
   --color-paper: #ffffff;
@@ -16,10 +18,48 @@
 
 :root {
   color-scheme: light;
+  --scrollbar-track: #eef3f1;
+  --scrollbar-thumb: #a2bcae;
+  --scrollbar-thumb-hover: #6f9682;
+}
+
+html {
+  scrollbar-gutter: stable;
 }
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid var(--scrollbar-track);
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
+}
+
+@media (forced-colors: active) {
+  * {
+    scrollbar-color: auto;
+  }
 }
 
 body {

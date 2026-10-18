@@ -1,0 +1,121 @@
+.qa-document-form .ant-form-item {
+  min-width: 0;
+}
+
+.qa-document-form .ant-form-item-label > label {
+  font-size: 13px;
+}
+
+.qa-document-form .ant-form-item-extra {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.qa-criterion-dropdown .ant-select-item-option-content,
+.qa-criterion-dropdown .ant-select-item-group {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+
+.qa-criterion-dropdown .ant-select-item-option {
+  padding-block: 8px;
+}
+
+.qa-management-note,
+.qa-framework-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #d5e2dc;
+  border-radius: 10px;
+  background: #f4f7f5;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.qa-management-note {
+  align-self: start;
+  margin-bottom: 24px;
+}
+
+.qa-framework-note .ant-tag {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.qa-code-preview.ant-card {
+  border-color: #123e2e;
+  background: #123e2e;
+  color: white;
+}
+
+.qa-document-code {
+  display: block;
+  min-height: 96px;
+  margin-block: 20px;
+  padding: 16px;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 5%);
+  color: #ffffff;
+  font-family: var(--font-inter), var(--font-kanit), sans-serif;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.qa-code-preview .ant-btn:disabled {
+  border-color: rgb(255 255 255 / 20%);
+  color: rgb(255 255 255 / 45%);
+}
+
+.qa-code-parts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 10px;
+  border-bottom: 1px solid #edf1ee;
+  font-size: 12px;
+}
+
+.qa-code-parts dt {
+  flex-shrink: 0;
+  color: #596f68;
+}
+
+.qa-code-parts dd {
+  min-width: 0;
+  font-family: var(--font-inter), var(--font-kanit), sans-serif;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.qa-document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 20px 24px;
+  border: 1px solid #dfe7e2;
+  border-radius: 16px;
+  background: white;
+}
+
+@media (max-width: 639px) {
+  .qa-document-actions > p {
+    flex-basis: 100%;
+  }
+
+  .qa-document-actions > button {
+    flex: 1;
+    min-width: 0;
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+}
