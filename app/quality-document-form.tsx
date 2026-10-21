@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   Alert,
   Button,
@@ -32,18 +32,16 @@ import {
   UploadCloud,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { assessmentCriteria } from "@/lib/assessment-criteria";
 import {
   buildDocumentCode,
-  curricula,
-  departments,
-  documentLevels,
-  educationJobs,
-  emptyDocument,
+  EMPTY_DOCUMENT,
   isValidCriterion,
   readDocumentDraft,
-  type QualityDocumentValues,
-} from "@/lib/quality-documents";
+  type DocumentCatalog,
+  type DocumentFormValues,
+} from "@/lib/quality-document-catalog";
+import { documentDraftKey } from "@/lib/quality-document-draft";
+import { saveQualityDocumentAction } from "./documents/actions";
 import "./quality-document-form.css";
 
 const selectArrow = <ChevronDown size={16} aria-hidden="true" />;
@@ -70,23 +68,38 @@ function SectionTitle({
   );
 }
 
-export default function QualityDocumentForm({ userId }: { userId: string }) {
-  const [form] = Form.useForm<QualityDocumentValues>();
+export default function QualityDocumentForm({
+  userId,
+  catalog,
+}: {
+  userId: string;
+  catalog: DocumentCatalog;
+}) {
+  const [form] = Form.useForm<DocumentFormValues>();
   const values = (Form.useWatch([], { form, preserve: true }) ??
-    emptyDocument) as QualityDocumentValues;
+    EMPTY_DOCUMENT) as DocumentFormValues;
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [restored, setRestored] = useState(false);
   const [needsAttachment, setNeedsAttachment] = useState(false);
-  const draftKey = `e-smart-qa:document-draft:${userId}`;
-  const curriculum = curricula.find((item) => item.value === values.curriculum);
+  const [saving, startSaving] = useTransition();
+  const draftKey = documentDraftKey(userId);
+  const department = catalog.departments.find(
+    (item) => item.value === values.department,
+  );
+  const jobOptions = values.department
+    ? (catalog.subDepartments[values.department] ?? [])
+    : [];
+  const curriculum = catalog.programs.find(
+    (item) => item.value === values.curriculum,
+  );
   const framework = curriculum?.framework;
-  const code = buildDocumentCode(values);
-  const isManagement = values.department === "MGT";
+  const code = buildDocumentCode(values, catalog);
+  const isManagement = department ? !department.hasSubDepartment : false;
   const parts = [
     { label: "หน่วยงาน", value: values.department },
     ...(!isManagement ? [{ label: "ชื่องาน", value: values.job }] : []),
-    { label: "หลักสูตร", value: curriculum?.abbreviation },
+    { label: "หลักสูตร", value: curriculum?.value },
     { label: "ระดับเอกสาร", value: values.level },
     { label: "เกณฑ์ประเมิน", value: values.criterion },
     {
@@ -99,7 +112,7 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
 
   useEffect(() => {
     try {
-      const draft = readDocumentDraft(localStorage.getItem(draftKey));
+      const draft = readDocumentDraft(localStorage.getItem(draftKey), catalog);
       if (draft) {
         form.setFieldsValue(draft.values);
         setRestored(true);
@@ -108,7 +121,7 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
     } catch {
       // The form remains available if local storage is blocked.
     }
-  }, [draftKey, form]);
+  }, [draftKey, form, catalog]);
 
   function saveDraft() {
     try {
@@ -153,13 +166,39 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
     }
   }
 
+  function saveDocument() {
+    const current = form.getFieldsValue(true) as DocumentFormValues;
+    const payload = new FormData();
+    payload.set("department", current.department ?? "");
+    payload.set("job", current.job ?? "");
+    payload.set("program", current.curriculum ?? "");
+    payload.set("level", current.level ?? "");
+    payload.set("criterion", current.criterion ?? "");
+    payload.set("sequence", current.sequence ?? "");
+    payload.set("title", current.title ?? "");
+    payload.set("description", current.description ?? "");
+    const file = files[0]?.originFileObj as File | undefined;
+    if (file) payload.set("file", file);
+
+    startSaving(async () => {
+      const result = await saveQualityDocumentAction(payload);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`บันทึกเอกสาร ${result.documentCode} แล้ว`);
+      setReviewOpen(false);
+      resetForm();
+    });
+  }
+
   const summary = [
     {
       key: "department",
       label: "หน่วยงาน",
       children:
-        departments.find((item) => item.value === values.department)?.label ??
-        "—",
+        catalog.departments.find((item) => item.value === values.department)
+          ?.label ?? "—",
     },
     ...(!isManagement
       ? [
@@ -167,7 +206,7 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
             key: "job",
             label: "ชื่องาน",
             children:
-              educationJobs.find((item) => item.value === values.job)?.label ??
+              jobOptions.find((item) => item.value === values.job)?.label ??
               "—",
           },
         ]
@@ -176,14 +215,14 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
       key: "curriculum",
       label: "หลักสูตร",
       children: curriculum
-        ? `${curriculum.name} (${curriculum.abbreviation})`
+        ? `${curriculum.name} (${curriculum.value})`
         : "—",
     },
     {
       key: "level",
       label: "ระดับเอกสาร",
       children:
-        documentLevels.find((item) => item.value === values.level)?.label ??
+        catalog.levels.find((item) => item.value === values.level)?.label ??
         "—",
     },
     { key: "framework", label: "กรอบประเมิน", children: framework ?? "—" },
@@ -196,11 +235,11 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
   ];
 
   return (
-    <Form<QualityDocumentValues>
+    <Form<DocumentFormValues>
       form={form}
       name="quality-document"
       layout="vertical"
-      initialValues={emptyDocument}
+      initialValues={EMPTY_DOCUMENT}
       scrollToFirstError={{ focus: true }}
       onFinish={() => {
         toast.dismiss("document-validation");
@@ -247,7 +286,10 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
               >
                 <Select
                   placeholder="เลือกหน่วยงาน"
-                  options={departments.map((item) => ({ ...item }))}
+                  options={catalog.departments.map((item) => ({
+                    value: item.value,
+                    label: item.label,
+                  }))}
                   suffixIcon={selectArrow}
                   onChange={() => form.setFieldValue("job", undefined)}
                 />
@@ -262,8 +304,11 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
                     placeholder={
                       values.department ? "เลือกชื่องาน" : "เลือกหน่วยงานก่อน"
                     }
-                    disabled={values.department !== "EDU"}
-                    options={educationJobs.map((item) => ({ ...item }))}
+                    disabled={!department?.hasSubDepartment}
+                    options={jobOptions.map((item) => ({
+                      value: item.value,
+                      label: item.label,
+                    }))}
                     suffixIcon={selectArrow}
                   />
                 </Form.Item>
@@ -291,9 +336,9 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
               >
                 <Select
                   placeholder="เลือกหลักสูตร"
-                  options={curricula.map((item) => ({
+                  options={catalog.programs.map((item) => ({
                     value: item.value,
-                    label: `${item.name} (${item.abbreviation})`,
+                    label: item.label,
                   }))}
                   suffixIcon={selectArrow}
                   onChange={() => form.setFieldValue("criterion", undefined)}
@@ -306,7 +351,10 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
               >
                 <Select
                   placeholder="เลือกระดับเอกสาร"
-                  options={documentLevels.map((item) => ({ ...item }))}
+                  options={catalog.levels.map((item) => ({
+                    value: item.value,
+                    label: item.label,
+                  }))}
                   suffixIcon={selectArrow}
                 />
               </Form.Item>
@@ -339,7 +387,9 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
                   { required: true, message: "กรุณาเลือกรหัสเกณฑ์" },
                   {
                     validator: (_, value: string | undefined) =>
-                      !value || !framework || isValidCriterion(value, framework)
+                      !value ||
+                      !framework ||
+                      isValidCriterion(catalog, framework, value)
                         ? Promise.resolve()
                         : Promise.reject(
                             new Error(
@@ -356,7 +406,7 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
                       ? `เลือกหรือค้นหาเกณฑ์ ${framework}`
                       : "เลือกหลักสูตรก่อน"
                   }
-                  options={framework ? assessmentCriteria[framework] : []}
+                  options={framework ? (catalog.criteria[framework] ?? []) : []}
                   showSearch={{ optionFilterProp: "label" }}
                   optionLabelProp="label"
                   allowClear
@@ -585,15 +635,31 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
           </span>
         }
         open={reviewOpen}
-        onCancel={() => setReviewOpen(false)}
+        onCancel={() => {
+          if (!saving) setReviewOpen(false);
+        }}
         width={680}
         footer={
-          <Button type="primary" onClick={() => setReviewOpen(false)}>
-            กลับไปแบบฟอร์ม
-          </Button>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setReviewOpen(false)} disabled={saving}>
+              กลับไปแบบฟอร์ม
+            </Button>
+            <Button
+              type="primary"
+              onClick={saveDocument}
+              loading={saving}
+              icon={
+                saving ? undefined : (
+                  <Save size={16} aria-hidden="true" />
+                )
+              }
+            >
+              บันทึกเอกสาร
+            </Button>
+          </div>
         }
       >
-        <Tag className="mb-4">ตัวอย่างเอกสาร</Tag>
+        <Tag className="mb-4">ตรวจสอบก่อนบันทึก</Tag>
         <h2 className="mb-2 break-words text-lg font-semibold">
           {values.title}
         </h2>
@@ -613,7 +679,8 @@ export default function QualityDocumentForm({ userId }: { userId: string }) {
           </p>
         )}
         <p className="mt-6 text-xs leading-6 text-muted">
-          เป็นการตรวจสอบข้อมูลก่อนบันทึก เอกสารยังไม่ได้ขึ้นทะเบียน
+          เมื่อกดบันทึก ระบบจะขึ้นทะเบียนเอกสารเป็นฉบับร่าง (DRAFT)
+          และออกเลขรหัสเอกสารตามที่แสดง
         </p>
       </Modal>
     </Form>

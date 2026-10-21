@@ -34,6 +34,14 @@ import DepartmentDocuments, {
 } from "./department-documents";
 import { curricula } from "@/lib/quality-documents";
 import QualityDocumentForm from "./quality-document-form";
+import QualityDocumentList from "./quality-document-list";
+import AdminSettings, {
+  settingsPages,
+  type SettingsSection,
+} from "./admin/admin-settings";
+import type { MasterData } from "@/types/master-data";
+import type { DocumentCatalog } from "@/lib/quality-document-catalog";
+import { clearDocumentDraft } from "@/lib/quality-document-draft";
 import "./dashboard.css";
 
 const documentPages = [
@@ -71,7 +79,9 @@ const documentPages = [
   },
 ] as const;
 
-type Section = "overview" | "account" | (typeof documentPages)[number]["id"];
+const allPages = [...documentPages, ...settingsPages];
+
+type Section = "overview" | "account" | (typeof allPages)[number]["id"];
 type UserInfo = { name: string; role: string };
 
 type NavigationState = DepartmentSelection & {
@@ -89,7 +99,10 @@ const submenuKeys = new Set<string>(
   documentPages.flatMap((page) => [...page.parents]),
 );
 
-function readNavigation(storageKey: string): NavigationState {
+function readNavigation(
+  storageKey: string,
+  canManage: boolean,
+): NavigationState {
   try {
     const saved: unknown = JSON.parse(
       localStorage.getItem(storageKey) ?? "null",
@@ -111,7 +124,11 @@ function readNavigation(storageKey: string): NavigationState {
     const validSection =
       migratedSection === "overview" ||
       migratedSection === "account" ||
-      documentPages.some((page) => page.id === migratedSection);
+      allPages.some(
+        (page) =>
+          page.id === migratedSection &&
+          (canManage || !page.id.startsWith("settings-")),
+      );
     const validCurriculum = curricula.some((item) => item.value === curriculum);
 
     return {
@@ -139,52 +156,73 @@ function readNavigation(storageKey: string): NavigationState {
   }
 }
 
-const navigationItems: MenuProps["items"] = [
-  {
-    type: "group",
-    label: "WORKSPACE",
-    children: [
-      {
-        key: "overview",
-        icon: <LayoutDashboard size={20} aria-hidden="true" />,
-        label: "ภาพรวม Dashboard",
-      },
-    ],
-  },
-  {
-    type: "group",
-    label: "ระบบงานคุณภาพ",
-    children: [
-      {
-        key: "documents",
-        icon: <FolderOpen size={20} aria-hidden="true" />,
-        label: "การจัดเอกสารคุณภาพ",
-        children: [
-          {
-            key: "documents-create",
-            icon: <FilePlus2 size={16} aria-hidden="true" />,
-            label: "เพิ่มเอกสารคุณภาพ",
-          },
-          {
-            key: "documents-all",
-            icon: <Files size={16} aria-hidden="true" />,
-            label: "เอกสารคุณภาพทั้งหมด",
-          },
-          {
-            key: "documents-departments",
-            icon: <Building2 size={16} aria-hidden="true" />,
-            label: "แยกตามหน่วยงาน",
-          },
-        ],
-      },
-      {
-        key: "regulations",
-        icon: <ScrollText size={20} aria-hidden="true" />,
-        label: "กฎระเบียบข้อบังคับ",
-      },
-    ],
-  },
-];
+function buildNavigationItems(
+  canManage: boolean,
+): MenuProps["items"] {
+  const items: NonNullable<MenuProps["items"]> = [
+    {
+      type: "group",
+      label: "WORKSPACE",
+      children: [
+        {
+          key: "overview",
+          icon: <LayoutDashboard size={20} aria-hidden="true" />,
+          label: "ภาพรวม Dashboard",
+        },
+      ],
+    },
+    {
+      type: "group",
+      label: "ระบบงานคุณภาพ",
+      children: [
+        {
+          key: "documents",
+          icon: <FolderOpen size={20} aria-hidden="true" />,
+          label: "การจัดเอกสารคุณภาพ",
+          children: [
+            {
+              key: "documents-create",
+              icon: <FilePlus2 size={16} aria-hidden="true" />,
+              label: "เพิ่มเอกสารคุณภาพ",
+            },
+            {
+              key: "documents-all",
+              icon: <Files size={16} aria-hidden="true" />,
+              label: "เอกสารคุณภาพทั้งหมด",
+            },
+            {
+              key: "documents-departments",
+              icon: <Building2 size={16} aria-hidden="true" />,
+              label: "แยกตามหน่วยงาน",
+            },
+          ],
+        },
+        {
+          key: "regulations",
+          icon: <ScrollText size={20} aria-hidden="true" />,
+          label: "กฎระเบียบข้อบังคับ",
+        },
+      ],
+    },
+  ];
+
+  if (canManage) {
+    items.push({
+      type: "group",
+      label: "ตั้งค่าข้อมูลพื้นฐาน",
+      children: settingsPages.map((page) => {
+        const Icon = page.icon;
+        return {
+          key: page.id,
+          icon: <Icon size={16} aria-hidden="true" />,
+          label: page.title,
+        };
+      }),
+    });
+  }
+
+  return items;
+}
 
 function Sidebar({
   section,
@@ -193,12 +231,14 @@ function Sidebar({
   onOpenChange,
   name,
   role,
+  canManage,
   onClose,
 }: UserInfo & {
   section: Section;
   onNavigate: (section: Section) => void;
   openKeys: string[];
   onOpenChange: (keys: string[]) => void;
+  canManage: boolean;
   onClose?: () => void;
 }) {
   return (
@@ -252,7 +292,7 @@ function Sidebar({
               aria-hidden="true"
             />
           }
-          items={navigationItems}
+          items={buildNavigationItems(canManage)}
           onClick={({ key }) => onNavigate(key as Section)}
         />
       </nav>
@@ -306,7 +346,15 @@ export default function Dashboard({
   userId,
   name,
   role,
-}: UserInfo & { userId: string }) {
+  canManage,
+  settings,
+  documentCatalog,
+}: UserInfo & {
+  userId: string;
+  canManage: boolean;
+  settings: MasterData | null;
+  documentCatalog: DocumentCatalog;
+}) {
   const storageKey = `e-smart-qa:dashboard:${userId}`;
   const [navigation, setNavigation] =
     useState<NavigationState>(defaultNavigation);
@@ -317,15 +365,15 @@ export default function Dashboard({
   const focusAfterClose = useRef(false);
   const menuTrigger = useRef<HTMLElement>(null);
   const wasMenuOpen = useRef(false);
-  const selectedPage = documentPages.find((item) => item.id === section);
+  const selectedPage = allPages.find((item) => item.id === section);
   const title =
     selectedPage?.title ??
     (section === "account" ? "บัญชีผู้ใช้งาน" : "ภาพรวม Dashboard");
 
   useEffect(() => {
-    setNavigation(readNavigation(storageKey));
+    setNavigation(readNavigation(storageKey, canManage));
     setRestoredKey(storageKey);
-  }, [storageKey]);
+  }, [storageKey, canManage]);
 
   function rememberNavigation(next: NavigationState) {
     setNavigation(next);
@@ -365,12 +413,17 @@ export default function Dashboard({
   }, [menuOpen]);
 
   function navigate(next: Section) {
-    const page = documentPages.find((item) => item.id === next);
+    if (section === "documents-create" && next !== "documents-create") {
+      clearDocumentDraft(userId);
+    }
+    const page = allPages.find((item) => item.id === next);
+    const parents =
+      page && "parents" in page ? page.parents : ([] as readonly string[]);
     rememberNavigation({
       ...navigation,
       section: next,
-      openKeys: page?.parents.length
-        ? [...new Set([...openKeys, ...page.parents])]
+      openKeys: parents.length
+        ? [...new Set([...openKeys, ...parents])]
         : openKeys,
     });
     if (menuOpen) {
@@ -405,6 +458,7 @@ export default function Dashboard({
           onOpenChange={changeOpenKeys}
           name={name}
           role={role}
+          canManage={canManage}
         />
       </Layout.Sider>
       <Drawer
@@ -431,6 +485,7 @@ export default function Dashboard({
           onOpenChange={changeOpenKeys}
           name={name}
           role={role}
+          canManage={canManage}
           onClose={() => setMenuOpen(false)}
         />
       </Drawer>
@@ -526,12 +581,23 @@ export default function Dashboard({
           )}
 
           {section === "documents-create" && (
-            <QualityDocumentForm userId={userId} />
+            <QualityDocumentForm userId={userId} catalog={documentCatalog} />
+          )}
+
+          {section === "documents-all" && <QualityDocumentList />}
+
+          {canManage && settings && section.startsWith("settings-") && (
+            <AdminSettings
+              section={section as SettingsSection}
+              data={settings}
+            />
           )}
 
           {selectedPage &&
             section !== "documents-departments" &&
-            section !== "documents-create" && (
+            section !== "documents-create" &&
+            section !== "documents-all" &&
+            !section.startsWith("settings-") && (
               <Card className="qa-pending-card mb-9">
                 <Empty
                   image={

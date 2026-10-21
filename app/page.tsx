@@ -1,4 +1,6 @@
 import { auth } from "@/lib/auth";
+import { loadMasterData } from "@/lib/master-data";
+import { buildDocumentCatalog } from "@/lib/quality-document-catalog";
 import { connection } from "next/server";
 import Dashboard from "./dashboard";
 
@@ -32,12 +34,18 @@ export default async function Home() {
 
   const { name, role } = session.user;
   const roleText = role ? (roleLabel[role] ?? role) : "ไม่ระบุบทบาท";
+  const canManage = role === "admin";
+  const masterData = await loadMasterData();
+  const documentCatalog = buildDocumentCatalog(masterData);
 
   return (
     <Dashboard
       userId={session.user.id}
       name={name || "ผู้ใช้งาน"}
       role={roleText}
+      canManage={canManage}
+      settings={canManage ? masterData : null}
+      documentCatalog={documentCatalog}
     />
   );
 }

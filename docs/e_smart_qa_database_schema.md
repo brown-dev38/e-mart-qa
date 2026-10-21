@@ -4,16 +4,16 @@
 
 ## 1. แนวคิดการออกแบบตามเงื่อนไขของระบบ (Design Principles)
 
-1. **การรองรับหน่วยงานที่มีและไม่มีงานย่อย (`departments` & `sub_departments`)**
+1. **การรองรับหน่วยงานที่มีและไม่มีงานย่อย (`docs_departments` & `docs_sub_departments`)**
    - แยกตารางหน่วยงานหลัก (`EDU`, `MGT`) ออกจากตารางงานย่อย (`ADM`, `TCH`, `ASM`, `STU`)
-   - ตาราง `departments` มีฟิลด์ `has_sub_department` เพื่อระบุว่าหน่วยงานนั้นมีงานย่อยหรือไม่ (`EDU` = `1`, `MGT` = `0`)
-   - ในตารางเอกสาร `qa_documents` กำหนดให้ `sub_department_id` มีค่าเป็น `NULL` ได้ (`NULLABLE`) สำหรับเอกสารของหน่วยงานบริหาร (`MGT`) ที่ไม่มีงานย่อยภายใต้หน่วยงาน
+   - ตาราง `docs_departments` มีฟิลด์ `has_sub_department` เพื่อระบุว่าหน่วยงานนั้นมีงานย่อยหรือไม่ (`EDU` = `1`, `MGT` = `0`)
+   - ในตารางเอกสาร `docs_qa_documents` กำหนดให้ `sub_department_id` มีค่าเป็น `NULL` ได้ (`NULLABLE`) สำหรับเอกสารของหน่วยงานบริหาร (`MGT`) ที่ไม่มีงานย่อยภายใต้หน่วยงาน
 
-2. **การล็อกความสัมพันธ์ระหว่างหลักสูตรกับเกณฑ์ (`programs` -> `accreditation_frameworks`)**
-   - ตาราง `programs` ผูก Foreign Key `framework_id` เข้ากับตารางกรอบมาตรฐาน (`WFME`, `AUN`) โดยตรง
+2. **การล็อกความสัมพันธ์ระหว่างหลักสูตรกับเกณฑ์ (`docs_programs` -> `docs_accreditation_frameworks`)**
+   - ตาราง `docs_programs` ผูก Foreign Key `framework_id` เข้ากับตารางกรอบมาตรฐาน (`WFME`, `AUN`) โดยตรง
    - เมื่อผู้ใช้เลือกหลักสูตร `M.D.` ระบบจะกรองเฉพาะเกณฑ์ภายใต้ `WFME` มาให้เลือก และหากเลือก `B.PMD.` ระบบจะกรองเฉพาะเกณฑ์ภายใต้ `AUN` ป้องกันการจับคู่ข้ามเกณฑ์ผิดพลาด
 
-3. **โครงสร้างเกณฑ์การประเมินแบบลำดับชั้น (`qa_criteria`)**
+3. **โครงสร้างเกณฑ์การประเมินแบบลำดับชั้น (`docs_qa_criteria`)**
    - ใช้รูปแบบ **Self-Referencing Foreign Key (`parent_id`)** ร่วมกับระดับชั้น (`level_depth`) เพื่อรองรับลำดับชั้นของเกณฑ์ WFME ได้อย่างยืดหยุ่น:
      - **ระดับที่ 1 (Area / หมวดหลัก):** เช่น `Area 1` (Mission and Outcomes)
      - **ระดับที่ 2 (Sub-area / หมวดย่อย):** เช่น `1.1` (Stated Mission)
@@ -21,25 +21,27 @@
    - มีฟิลด์ `is_selectable` (`BOOLEAN`) เพื่อบังคับให้ผู้ใช้เลือกผูกเอกสารได้เฉพาะข้อเกณฑ์ย่อยระดับใบ (Leaf Node เช่น `W1.1.1` หรือ `A1.1-1`) เท่านั้น
 
 4. **ความสัมพันธ์ระหว่างเอกสารกับเกณฑ์ (1 เอกสาร : 1 เกณฑ์)**
-   - เอกสาร 1 ฉบับผูกกับเกณฑ์ได้เพียง 1 ข้อ จึงเก็บ `criterion_id` เป็น Foreign Key อยู่ในตาราง `qa_documents` โดยตรง (One-to-Many จากมุมของเกณฑ์ คือ 1 เกณฑ์มีเอกสารได้หลายฉบับ แต่ 1 เอกสารชี้ไปที่เกณฑ์เดียว)
+   - เอกสาร 1 ฉบับผูกกับเกณฑ์ได้เพียง 1 ข้อ จึงเก็บ `criterion_id` เป็น Foreign Key อยู่ในตาราง `docs_qa_documents` โดยตรง (One-to-Many จากมุมของเกณฑ์ คือ 1 เกณฑ์มีเอกสารได้หลายฉบับ แต่ 1 เอกสารชี้ไปที่เกณฑ์เดียว)
    - ส่วนการรันเลขลำดับเอกสาร (`sequence_no`) แยกเก็บเป็นฟิลด์ `VARCHAR(10)` (ค่าเริ่มต้น `'000'` หรือ `NULL`) เพื่อให้สามารถนำมาเขียนลอจิกคำนวณเลขรันต่อได้ในอนาคตโดยไม่ต้องแก้โครงสร้างตาราง
 
 ## 2. สรุปรายชื่อตารางในฐานข้อมูล (Table Overview)
 
+ชื่อตารางทั้งหมดในโมดูลเอกสารคุณภาพขึ้นต้นด้วย `docs_` เพื่อไม่ให้ซ้ำกับตารางของระบบผู้ใช้ (`users`, `department`, `role`, `position`)
+
 | ลำดับ | ชื่อตาราง (Table Name) | ประเภทตาราง | หน้าที่และการเก็บข้อมูล |
 | :--- | :--- | :--- | :--- |
-| 1 | `departments` | Master Data | เก็บข้อมูลหน่วยงานหลัก (`EDU`, `MGT`) |
-| 2 | `sub_departments` | Master Data | เก็บข้อมูลงานย่อยภายใต้หน่วยงาน (`ADM`, `TCH`, `ASM`, `STU`) |
-| 3 | `accreditation_frameworks` | Master Data | เก็บกรอบเกณฑ์การประเมิน (`WFME`, `AUN`) |
-| 4 | `programs` | Master Data | เก็บข้อมูลหลักสูตร (`M.D.`, `B.PMD.`) และผูกกับกรอบเกณฑ์ |
-| 5 | `document_levels` | Master Data | เก็บระดับเอกสารคุณภาพ (`QM`, `SP`, `WI`, `FM`, `SD`) |
-| 6 | `qa_criteria` | Hierarchical Master | เก็บโครงสร้างเกณฑ์ WFME และ AUN แบบลำดับชั้น (Tree Structure) |
-| 7 | `qa_documents` | Transaction | เก็บข้อมูลเอกสารคุณภาพ รหัสเอกสาร เมทาดาทา และไฟล์แนบหลัก |
-| 8 | `qa_document_revisions` | Transaction (Optional) | เก็บประวัติการอัปเดตไฟล์เอกสารย้อนหลัง (Version Control) |
+| 1 | `docs_departments` | Master Data | เก็บข้อมูลหน่วยงานหลัก (`EDU`, `MGT`) |
+| 2 | `docs_sub_departments` | Master Data | เก็บข้อมูลงานย่อยภายใต้หน่วยงาน (`ADM`, `TCH`, `ASM`, `STU`) |
+| 3 | `docs_accreditation_frameworks` | Master Data | เก็บกรอบเกณฑ์การประเมิน (`WFME`, `AUN`) |
+| 4 | `docs_programs` | Master Data | เก็บข้อมูลหลักสูตร (`M.D.`, `B.PMD.`) และผูกกับกรอบเกณฑ์ |
+| 5 | `docs_document_levels` | Master Data | เก็บระดับเอกสารคุณภาพ (`QM`, `SP`, `WI`, `FM`, `SD`) |
+| 6 | `docs_qa_criteria` | Hierarchical Master | เก็บโครงสร้างเกณฑ์ WFME และ AUN แบบลำดับชั้น (Tree Structure) |
+| 7 | `docs_qa_documents` | Transaction | เก็บข้อมูลเอกสารคุณภาพ รหัสเอกสาร เมทาดาทา และไฟล์แนบหลัก |
+| 8 | `docs_qa_document_revisions` | Transaction (Optional) | เก็บประวัติการอัปเดตไฟล์เอกสารย้อนหลัง (Version Control) |
 
 ## 3. โครงสร้างตารางโดยละเอียด (Data Dictionary)
 
-### 3.1 ตาราง `departments` (หน่วยงานหลัก)
+### 3.1 ตาราง `docs_departments` (หน่วยงานหลัก)
 | ชื่อคอลัมน์ | ชนิดข้อมูล | Constraint | คำอธิบาย |
 | :--- | :--- | :--- | :--- |
 | `id` | `INT UNSIGNED` | `PK, AUTO_INCREMENT` | รหัสอ้างอิงหน่วยงานหลัก |
@@ -51,11 +53,11 @@
 | `created_at` | `TIMESTAMP` | `DEFAULT CURRENT_TIMESTAMP` | วันเวลาที่สร้างรายการ |
 | `updated_at` | `TIMESTAMP` | `ON UPDATE CURRENT_TIMESTAMP` | วันเวลาที่แก้ไขล่าสุด |
 
-### 3.2 ตาราง `sub_departments` (ชื่องานย่อยภายใต้หน่วยงาน)
+### 3.2 ตาราง `docs_sub_departments` (ชื่องานย่อยภายใต้หน่วยงาน)
 | ชื่อคอลัมน์ | ชนิดข้อมูล | Constraint | คำอธิบาย |
 | :--- | :--- | :--- | :--- |
 | `id` | `INT UNSIGNED` | `PK, AUTO_INCREMENT` | รหัสอ้างอิงงานย่อย |
-| `department_id` | `INT UNSIGNED` | `FK -> departments.id, NOT NULL` | อ้างอิงหน่วยงานหลัก |
+| `department_id` | `INT UNSIGNED` | `FK -> docs_departments.id, NOT NULL` | อ้างอิงหน่วยงานหลัก |
 | `code` | `VARCHAR(20)` | `NOT NULL` | รหัสย่องาน เช่น `ADM`, `TCH`, `ASM`, `STU` |
 | `name_th` | `VARCHAR(150)` | `NOT NULL` | ชื่องานภาษาไทย เช่น `งานรับเข้า` |
 | `name_en` | `VARCHAR(150)` | `NULL` | ชื่องานภาษาอังกฤษ |
@@ -64,7 +66,7 @@
 | `created_at` | `TIMESTAMP` | `DEFAULT CURRENT_TIMESTAMP` | วันเวลาที่สร้างรายการ |
 | `updated_at` | `TIMESTAMP` | `ON UPDATE CURRENT_TIMESTAMP` | วันเวลาที่แก้ไขล่าสุด |
 
-### 3.3 ตาราง `accreditation_frameworks` (กรอบเกณฑ์การประเมิน)
+### 3.3 ตาราง `docs_accreditation_frameworks` (กรอบเกณฑ์การประเมิน)
 | ชื่อคอลัมน์ | ชนิดข้อมูล | Constraint | คำอธิบาย |
 | :--- | :--- | :--- | :--- |
 | `id` | `INT UNSIGNED` | `PK, AUTO_INCREMENT` | รหัสอ้างอิงกรอบเกณฑ์ |
@@ -75,17 +77,17 @@
 | `version_year` | `VARCHAR(20)` | `NULL` | ปีหรือรุ่นของเกณฑ์ เช่น `2020` |
 | `is_active` | `TINYINT(1)` | `NOT NULL DEFAULT 1` | สถานะการใช้งาน |
 
-### 3.4 ตาราง `programs` (หลักสูตร)
+### 3.4 ตาราง `docs_programs` (หลักสูตร)
 | ชื่อคอลัมน์ | ชนิดข้อมูล | Constraint | คำอธิบาย |
 | :--- | :--- | :--- | :--- |
 | `id` | `INT UNSIGNED` | `PK, AUTO_INCREMENT` | รหัสอ้างอิงหลักสูตร |
 | `code` | `VARCHAR(20)` | `NOT NULL, UNIQUE` | รหัสย่อหลักสูตรที่ใช้ในรหัสเอกสาร เช่น `M.D.`, `B.PMD.` |
 | `name_th` | `VARCHAR(200)` | `NOT NULL` | ชื่อหลักสูตรภาษาไทย |
 | `name_en` | `VARCHAR(200)` | `NULL` | ชื่อหลักสูตรภาษาอังกฤษ |
-| `framework_id` | `INT UNSIGNED` | `FK -> accreditation_frameworks.id` | กรอบเกณฑ์อ้างอิงหลักของหลักสูตร (`M.D.` -> `WFME`, `B.PMD.` -> `AUN`) |
+| `framework_id` | `INT UNSIGNED` | `FK -> docs_accreditation_frameworks.id` | กรอบเกณฑ์อ้างอิงหลักของหลักสูตร (`M.D.` -> `WFME`, `B.PMD.` -> `AUN`) |
 | `is_active` | `TINYINT(1)` | `NOT NULL DEFAULT 1` | สถานะการใช้งาน |
 
-### 3.5 ตาราง `document_levels` (ระดับเอกสารคุณภาพ)
+### 3.5 ตาราง `docs_document_levels` (ระดับเอกสารคุณภาพ)
 | ชื่อคอลัมน์ | ชนิดข้อมูล | Constraint | คำอธิบาย |
 | :--- | :--- | :--- | :--- |
 | `id` | `INT UNSIGNED` | `PK, AUTO_INCREMENT` | รหัสอ้างอิงระดับเอกสาร |
@@ -95,12 +97,12 @@
 | `level_order` | `TINYINT UNSIGNED` | `NOT NULL` | ลำดับชั้นความสำคัญ (`1`=QM, `2`=SP, `3`=WI, `4`=FM, `5`=SD) |
 | `is_active` | `TINYINT(1)` | `NOT NULL DEFAULT 1` | สถานะการใช้งาน |
 
-### 3.6 ตาราง `qa_criteria` (โครงสร้างเกณฑ์ WFME / AUN แบบลำดับชั้น)
+### 3.6 ตาราง `docs_qa_criteria` (โครงสร้างเกณฑ์ WFME / AUN แบบลำดับชั้น)
 | ชื่อคอลัมน์ | ชนิดข้อมูล | Constraint | คำอธิบาย |
 | :--- | :--- | :--- | :--- |
 | `id` | `INT UNSIGNED` | `PK, AUTO_INCREMENT` | รหัสอ้างอิงข้อเกณฑ์ |
-| `framework_id` | `INT UNSIGNED` | `FK -> accreditation_frameworks.id` | อ้างอิงกรอบเกณฑ์ (`WFME` หรือ `AUN`) |
-| `parent_id` | `INT UNSIGNED` | `FK -> qa_criteria.id, NULL` | อ้างอิงหัวข้อแม่ (`NULL` หากเป็นหมวดใหญ่สุดระดับที่ 1) |
+| `framework_id` | `INT UNSIGNED` | `FK -> docs_accreditation_frameworks.id` | อ้างอิงกรอบเกณฑ์ (`WFME` หรือ `AUN`) |
+| `parent_id` | `INT UNSIGNED` | `FK -> docs_qa_criteria.id, NULL` | อ้างอิงหัวข้อแม่ (`NULL` หากเป็นหมวดใหญ่สุดระดับที่ 1) |
 | `code` | `VARCHAR(30)` | `NOT NULL` | รหัสเกณฑ์ที่ใช้ออกรหัสเอกสาร เช่น `W1`, `W1.1`, `W1.1.1`, `A1.1-1` |
 | `section_number` | `VARCHAR(20)` | `NOT NULL` | เลขหัวข้อตามเกณฑ์จริง เช่น `1`, `1.1`, `1.1.1`, `1.1-1` |
 | `level_depth` | `TINYINT UNSIGNED` | `NOT NULL` | ระดับความลึกของชั้น (`1`=Area, `2`=Sub-area, `3`=Standard) |
@@ -112,7 +114,7 @@
 | `sort_order` | `INT UNSIGNED` | `NOT NULL DEFAULT 0` | ลำดับการแสดงผลภายใต้หัวข้อแม่เดียวกัน |
 | `is_active` | `TINYINT(1)` | `NOT NULL DEFAULT 1` | สถานะการใช้งาน |
 
-### 3.7 ตาราง `qa_documents` (ตารางจัดเก็บเอกสารคุณภาพ)
+### 3.7 ตาราง `docs_qa_documents` (ตารางจัดเก็บเอกสารคุณภาพ)
 | ชื่อคอลัมน์ | ชนิดข้อมูล | Constraint | คำอธิบาย |
 | :--- | :--- | :--- | :--- |
 | `id` | `BIGINT UNSIGNED` | `PK, AUTO_INCREMENT` | รหัสอ้างอิงเอกสารคุณภาพ |
@@ -120,11 +122,11 @@
 | `sequence_no` | `VARCHAR(10)` | `NULL DEFAULT '000'` | เลขลำดับเอกสารท้ายรหัส (เว้นไว้ให้กำหนดลอจิกภายหลัง) |
 | `title` | `VARCHAR(500)` | `NOT NULL` | ชื่อเรื่องเอกสารคุณภาพ |
 | `description` | `TEXT` | `NULL` | รายละเอียดหรือสรุปสาระสำคัญของเอกสาร |
-| `department_id` | `INT UNSIGNED` | `FK -> departments.id, NOT NULL` | หน่วยงานหลักเจ้าของเอกสาร (`EDU`, `MGT`) |
-| `sub_department_id` | `INT UNSIGNED` | `FK -> sub_departments.id, NULL` | งานย่อย (`ADM`, `TCH`, ...) เป็น `NULL` ได้กรณีเป็น `MGT` |
-| `program_id` | `INT UNSIGNED` | `FK -> programs.id, NOT NULL` | หลักสูตรของเอกสาร (`M.D.`, `B.PMD.`) |
-| `document_level_id` | `INT UNSIGNED` | `FK -> document_levels.id, NOT NULL` | ระดับเอกสารคุณภาพ (`QM`, `SP`, `WI`, `FM`, `SD`) |
-| `criterion_id` | `INT UNSIGNED` | `FK -> qa_criteria.id, NOT NULL` | เกณฑ์การประเมินที่ผูกกับเอกสาร (1 เอกสาร ผูกได้ 1 เกณฑ์) |
+| `department_id` | `INT UNSIGNED` | `FK -> docs_departments.id, NOT NULL` | หน่วยงานหลักเจ้าของเอกสาร (`EDU`, `MGT`) |
+| `sub_department_id` | `INT UNSIGNED` | `FK -> docs_sub_departments.id, NULL` | งานย่อย (`ADM`, `TCH`, ...) เป็น `NULL` ได้กรณีเป็น `MGT` |
+| `program_id` | `INT UNSIGNED` | `FK -> docs_programs.id, NOT NULL` | หลักสูตรของเอกสาร (`M.D.`, `B.PMD.`) |
+| `document_level_id` | `INT UNSIGNED` | `FK -> docs_document_levels.id, NOT NULL` | ระดับเอกสารคุณภาพ (`QM`, `SP`, `WI`, `FM`, `SD`) |
+| `criterion_id` | `INT UNSIGNED` | `FK -> docs_qa_criteria.id, NOT NULL` | เกณฑ์การประเมินที่ผูกกับเอกสาร (1 เอกสาร ผูกได้ 1 เกณฑ์) |
 | `current_version` | `VARCHAR(20)` | `NOT NULL DEFAULT '1.0'` | เลขเวอร์ชันหรือครั้งที่แก้ไขปัจจุบัน |
 | `effective_date` | `DATE` | `NULL` | วันที่เริ่มบังคับใช้เอกสาร |
 | `review_date` | `DATE` | `NULL` | วันที่ครบกำหนดทบทวนเอกสาร |
@@ -151,9 +153,9 @@ CREATE DATABASE IF NOT EXISTS `e_smart_qa`
 USE `e_smart_qa`;
 
 -- ==========================================
--- 1. ตารางหน่วยงานหลัก (departments)
+-- 1. ตารางหน่วยงานหลัก (docs_departments)
 -- ==========================================
-CREATE TABLE `departments` (
+CREATE TABLE `docs_departments` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `code` VARCHAR(20) NOT NULL COMMENT 'รหัสหน่วยงาน เช่น EDU, MGT',
   `name_th` VARCHAR(150) NOT NULL COMMENT 'ชื่อหน่วยงานภาษาไทย',
@@ -164,15 +166,15 @@ CREATE TABLE `departments` (
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_departments_code` (`code`)
+  UNIQUE KEY `uk_docs_departments_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================
--- 2. ตารางงานย่อยภายใต้หน่วยงาน (sub_departments)
+-- 2. ตารางงานย่อยภายใต้หน่วยงาน (docs_sub_departments)
 -- ==========================================
-CREATE TABLE `sub_departments` (
+CREATE TABLE `docs_sub_departments` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `department_id` INT UNSIGNED NOT NULL COMMENT 'FK อ้างอิงตาราง departments',
+  `department_id` INT UNSIGNED NOT NULL COMMENT 'FK อ้างอิงตาราง docs_departments',
   `code` VARCHAR(20) NOT NULL COMMENT 'รหัสงานย่อย เช่น ADM, TCH, ASM, STU',
   `name_th` VARCHAR(150) NOT NULL COMMENT 'ชื่องานย่อยภาษาไทย',
   `name_en` VARCHAR(150) DEFAULT NULL COMMENT 'ชื่องานย่อยภาษาอังกฤษ',
@@ -182,15 +184,15 @@ CREATE TABLE `sub_departments` (
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_sub_dept_code_per_dept` (`department_id`, `code`),
-  CONSTRAINT `fk_sub_departments_department`
-    FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`)
+  CONSTRAINT `fk_docs_sub_departments_department`
+    FOREIGN KEY (`department_id`) REFERENCES `docs_departments` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================
--- 3. ตารางกรอบเกณฑ์การประเมิน (accreditation_frameworks)
+-- 3. ตารางกรอบเกณฑ์การประเมิน (docs_accreditation_frameworks)
 -- ==========================================
-CREATE TABLE `accreditation_frameworks` (
+CREATE TABLE `docs_accreditation_frameworks` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `code` VARCHAR(20) NOT NULL COMMENT 'รหัสกรอบเกณฑ์ เช่น WFME, AUN',
   `prefix_char` VARCHAR(5) NOT NULL COMMENT 'ตัวอักษรนำหน้าเกณฑ์ เช่น W, A',
@@ -205,9 +207,9 @@ CREATE TABLE `accreditation_frameworks` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================
--- 4. ตารางหลักสูตร (programs)
+-- 4. ตารางหลักสูตร (docs_programs)
 -- ==========================================
-CREATE TABLE `programs` (
+CREATE TABLE `docs_programs` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `code` VARCHAR(20) NOT NULL COMMENT 'รหัสหลักสูตร เช่น M.D., B.PMD.',
   `name_th` VARCHAR(200) NOT NULL,
@@ -217,17 +219,17 @@ CREATE TABLE `programs` (
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_programs_code` (`code`),
-  KEY `idx_programs_framework` (`framework_id`),
-  CONSTRAINT `fk_programs_framework`
-    FOREIGN KEY (`framework_id`) REFERENCES `accreditation_frameworks` (`id`)
+  UNIQUE KEY `uk_docs_programs_code` (`code`),
+  KEY `idx_docs_programs_framework` (`framework_id`),
+  CONSTRAINT `fk_docs_programs_framework`
+    FOREIGN KEY (`framework_id`) REFERENCES `docs_accreditation_frameworks` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================
--- 5. ตารางระดับเอกสารคุณภาพ (document_levels)
+-- 5. ตารางระดับเอกสารคุณภาพ (docs_document_levels)
 -- ==========================================
-CREATE TABLE `document_levels` (
+CREATE TABLE `docs_document_levels` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `code` VARCHAR(10) NOT NULL COMMENT 'รหัสระดับเอกสาร เช่น QM, SP, WI, FM, SD',
   `name_th` VARCHAR(100) NOT NULL,
@@ -237,13 +239,13 @@ CREATE TABLE `document_levels` (
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_document_levels_code` (`code`)
+  UNIQUE KEY `uk_docs_document_levels_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================
--- 6. ตารางเกณฑ์การประเมินแบบลำดับชั้น (qa_criteria)
+-- 6. ตารางเกณฑ์การประเมินแบบลำดับชั้น (docs_qa_criteria)
 -- ==========================================
-CREATE TABLE `qa_criteria` (
+CREATE TABLE `docs_qa_criteria` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `framework_id` INT UNSIGNED NOT NULL COMMENT 'FK อ้างอิงกรอบเกณฑ์ WFME หรือ AUN',
   `parent_id` INT UNSIGNED DEFAULT NULL COMMENT 'FK อ้างอิงหัวข้อแม่ในตารางเดียวกัน (NULL = หมวดหลัก)',
@@ -264,17 +266,17 @@ CREATE TABLE `qa_criteria` (
   KEY `idx_criteria_parent` (`parent_id`),
   KEY `idx_criteria_framework_level` (`framework_id`, `level_depth`, `sort_order`),
   CONSTRAINT `fk_criteria_framework`
-    FOREIGN KEY (`framework_id`) REFERENCES `accreditation_frameworks` (`id`)
+    FOREIGN KEY (`framework_id`) REFERENCES `docs_accreditation_frameworks` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_criteria_parent`
-    FOREIGN KEY (`parent_id`) REFERENCES `qa_criteria` (`id`)
+    FOREIGN KEY (`parent_id`) REFERENCES `docs_qa_criteria` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================
--- 7. ตารางจัดเก็บเอกสารคุณภาพ (qa_documents)
+-- 7. ตารางจัดเก็บเอกสารคุณภาพ (docs_qa_documents)
 -- ==========================================
-CREATE TABLE `qa_documents` (
+CREATE TABLE `docs_qa_documents` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `document_code` VARCHAR(100) NOT NULL COMMENT 'รหัสเอกสารเต็ม เช่น EDU-ADM-M.D.-QM-W1.1.1-000',
   `sequence_no` VARCHAR(10) DEFAULT '000' COMMENT 'ลำดับเอกสาร (เว้นลอจิกการรันไว้กำหนดภายหลัง)',
@@ -298,35 +300,35 @@ CREATE TABLE `qa_documents` (
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_qa_documents_code` (`document_code`),
+  UNIQUE KEY `uk_docs_qa_documents_code` (`document_code`),
   KEY `idx_docs_dept_subdept` (`department_id`, `sub_department_id`),
   KEY `idx_docs_program` (`program_id`),
   KEY `idx_docs_level` (`document_level_id`),
   KEY `idx_docs_criterion` (`criterion_id`),
   KEY `idx_docs_status` (`status`),
   CONSTRAINT `fk_docs_department`
-    FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`)
+    FOREIGN KEY (`department_id`) REFERENCES `docs_departments` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_docs_sub_department`
-    FOREIGN KEY (`sub_department_id`) REFERENCES `sub_departments` (`id`)
+    FOREIGN KEY (`sub_department_id`) REFERENCES `docs_sub_departments` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_docs_program`
-    FOREIGN KEY (`program_id`) REFERENCES `programs` (`id`)
+    FOREIGN KEY (`program_id`) REFERENCES `docs_programs` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_docs_document_level`
-    FOREIGN KEY (`document_level_id`) REFERENCES `document_levels` (`id`)
+    FOREIGN KEY (`document_level_id`) REFERENCES `docs_document_levels` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_docs_criterion`
-    FOREIGN KEY (`criterion_id`) REFERENCES `qa_criteria` (`id`)
+    FOREIGN KEY (`criterion_id`) REFERENCES `docs_qa_criteria` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================
--- 8. ตารางประวัติการแก้ไขเอกสาร (qa_document_revisions)
+-- 8. ตารางประวัติการแก้ไขเอกสาร (docs_qa_document_revisions)
 -- ==========================================
-CREATE TABLE `qa_document_revisions` (
+CREATE TABLE `docs_qa_document_revisions` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `document_id` BIGINT UNSIGNED NOT NULL COMMENT 'FK อ้างอิงตาราง qa_documents',
+  `document_id` BIGINT UNSIGNED NOT NULL COMMENT 'FK อ้างอิงตาราง docs_qa_documents',
   `version_label` VARCHAR(20) NOT NULL COMMENT 'เลขเวอร์ชัน เช่น 1.0, 1.1, 2.0',
   `change_note` TEXT DEFAULT NULL COMMENT 'บันทึกการเปลี่ยนแปลง',
   `file_path` VARCHAR(1000) NOT NULL,
@@ -338,7 +340,7 @@ CREATE TABLE `qa_document_revisions` (
   PRIMARY KEY (`id`),
   KEY `idx_revisions_document` (`document_id`),
   CONSTRAINT `fk_revisions_document`
-    FOREIGN KEY (`document_id`) REFERENCES `qa_documents` (`id`)
+    FOREIGN KEY (`document_id`) REFERENCES `docs_qa_documents` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -347,29 +349,29 @@ CREATE TABLE `qa_document_revisions` (
 -- ==========================================
 
 -- 1. ข้อมูลหน่วยงานหลัก
-INSERT INTO `departments` (`id`, `code`, `name_th`, `name_en`, `has_sub_department`, `sort_order`) VALUES
+INSERT INTO `docs_departments` (`id`, `code`, `name_th`, `name_en`, `has_sub_department`, `sort_order`) VALUES
 (1, 'EDU', 'หน่วยงานการศึกษา', 'Education Department', 1, 1),
 (2, 'MGT', 'หน่วยงานบริหาร', 'Management Department', 0, 2);
 
 -- 2. ข้อมูลงานย่อยภายใต้หน่วยงานการศึกษา (EDU)
-INSERT INTO `sub_departments` (`id`, `department_id`, `code`, `name_th`, `name_en`, `sort_order`) VALUES
+INSERT INTO `docs_sub_departments` (`id`, `department_id`, `code`, `name_th`, `name_en`, `sort_order`) VALUES
 (1, 1, 'ADM', 'งานรับเข้า', 'Admissions Unit', 1),
 (2, 1, 'TCH', 'งานจัดการเรียนการสอน', 'Teaching and Learning Unit', 2),
 (3, 1, 'ASM', 'งานวัดและประเมินผล', 'Assessment and Evaluation Unit', 3),
 (4, 1, 'STU', 'งานนิสิต', 'Student Affairs Unit', 4);
 
 -- 3. ข้อมูลกรอบเกณฑ์การประเมิน
-INSERT INTO `accreditation_frameworks` (`id`, `code`, `prefix_char`, `name_th`, `name_en`, `version_year`) VALUES
+INSERT INTO `docs_accreditation_frameworks` (`id`, `code`, `prefix_char`, `name_th`, `name_en`, `version_year`) VALUES
 (1, 'WFME', 'W', 'เกณฑ์มาตรฐานสากลแพทยศาสตรศึกษา (WFME)', 'World Federation for Medical Education', '2020'),
 (2, 'AUN', 'A', 'เกณฑ์เครือข่ายการประกันคุณภาพมหาวิทยาลัยอาเซียน (AUN-QA)', 'ASEAN University Network - Quality Assurance', '4.0');
 
 -- 4. ข้อมูลหลักสูตร (ผูกกับกรอบเกณฑ์)
-INSERT INTO `programs` (`id`, `code`, `name_th`, `name_en`, `framework_id`) VALUES
+INSERT INTO `docs_programs` (`id`, `code`, `name_th`, `name_en`, `framework_id`) VALUES
 (1, 'M.D.', 'หลักสูตรแพทยศาสตรบัณฑิต', 'Doctor of Medicine Program', 1),
 (2, 'B.PMD.', 'หลักสูตรฉุกเฉินการแพทยบัณฑิต', 'Bachelor of Paramedicine Program', 2);
 
 -- 5. ข้อมูลระดับเอกสารคุณภาพ
-INSERT INTO `document_levels` (`id`, `code`, `name_th`, `name_en`, `level_order`) VALUES
+INSERT INTO `docs_document_levels` (`id`, `code`, `name_th`, `name_en`, `level_order`) VALUES
 (1, 'QM', 'นโยบายคุณภาพ', 'Quality Manual / Policy', 1),
 (2, 'SP', 'ระเบียบปฏิบัติ', 'System Procedure', 2),
 (3, 'WI', 'แนวทางปฏิบัติ', 'Work Instruction', 3),
@@ -377,7 +379,7 @@ INSERT INTO `document_levels` (`id`, `code`, `name_th`, `name_en`, `level_order`
 (5, 'SD', 'เอกสารสนับสนุน', 'Supporting Document', 5);
 
 -- 6. ตัวอย่างโครงสร้างเกณฑ์ WFME แบบลำดับชั้น (Area -> Sub-area -> Standard)
-INSERT INTO `qa_criteria`
+INSERT INTO `docs_qa_criteria`
   (`id`, `framework_id`, `parent_id`, `code`, `section_number`, `level_depth`, `wfme_standard_type`, `title_th`, `title_en`, `is_selectable`, `sort_order`)
 VALUES
   -- ระดับที่ 1: Area 1 (เป็นหัวข้อหลัก เลือกผูกเอกสารไม่ได้ -> is_selectable = 0)
@@ -389,7 +391,7 @@ VALUES
   (4, 1, 2, 'W1.1.2', '1.1.2', 3, 'BASIC', 'การมีส่วนร่วมของประชาคมและผู้มีส่วนได้ส่วนเสียในการกำหนดพันธกิจ', 'Stakeholder Participation in Mission Formulation', 1, 2);
 
 -- 7. ตัวอย่างโครงสร้างเกณฑ์ AUN แบบลำดับชั้น
-INSERT INTO `qa_criteria`
+INSERT INTO `docs_qa_criteria`
   (`id`, `framework_id`, `parent_id`, `code`, `section_number`, `level_depth`, `wfme_standard_type`, `title_th`, `title_en`, `is_selectable`, `sort_order`)
 VALUES
   (5, 2, NULL, 'A1', '1', 1, 'NONE', 'ผลการเรียนรู้ที่คาดหวัง (Expected Learning Outcomes)', 'Expected Learning Outcomes', 0, 1),
@@ -397,7 +399,7 @@ VALUES
   (7, 2, 6, 'A1.1-1', '1.1-1', 3, 'NONE', 'ผลการเรียนรู้ที่คาดหวังมีความชัดเจนและสอดคล้องกับพันธกิจ', 'Alignment of Expected Learning Outcomes', 1, 1);
 
 -- 8. ตัวอย่างการบันทึกเอกสารคุณภาพตามตัวอย่างรหัสที่กำหนด
-INSERT INTO `qa_documents`
+INSERT INTO `docs_qa_documents`
   (`document_code`, `sequence_no`, `title`, `department_id`, `sub_department_id`, `program_id`, `document_level_id`, `criterion_id`, `status`)
 VALUES
   ('EDU-ADM-M.D.-QM-W1.1.1-000', '000', 'นโยบายคุณภาพการรับเข้าศึกษาหลักสูตรแพทยศาสตรบัณฑิต', 1, 1, 1, 1, 3, 'PUBLISHED'),
@@ -416,7 +418,7 @@ WITH RECURSIVE criteria_tree AS (
     id, parent_id, code, section_number, title_th,
     level_depth, is_selectable,
     CAST(LPAD(sort_order, 4, '0') AS CHAR(200)) AS sort_path
-  FROM qa_criteria
+  FROM docs_qa_criteria
   WHERE framework_id = 1 AND parent_id IS NULL AND is_active = 1
 
   UNION ALL
@@ -426,7 +428,7 @@ WITH RECURSIVE criteria_tree AS (
     c.id, c.parent_id, c.code, c.section_number, c.title_th,
     c.level_depth, c.is_selectable,
     CONCAT(ct.sort_path, '-', LPAD(c.sort_order, 4, '0')) AS sort_path
-  FROM qa_criteria c
+  FROM docs_qa_criteria c
   INNER JOIN criteria_tree ct ON c.parent_id = ct.id
   WHERE c.is_active = 1
 )
