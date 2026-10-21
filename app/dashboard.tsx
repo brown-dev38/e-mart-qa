@@ -28,18 +28,20 @@ import {
   X,
 } from "lucide-react";
 import SignOutButton from "./sign-out-button";
-import DepartmentDocuments, {
-  workTypes,
-  type DepartmentSelection,
-} from "./department-documents";
-import { curricula } from "@/lib/quality-documents";
+import DepartmentDocuments from "./department-documents";
+import { readDepartmentSelection } from "@/lib/department-documents";
+import type { DepartmentDocumentCatalog, DepartmentSelection } from "@/types/department-documents";
 import QualityDocumentForm from "./quality-document-form";
 import QualityDocumentList from "./quality-document-list";
-import AdminSettings, {
-  settingsPages,
-  type SettingsSection,
-} from "./admin/admin-settings";
+import AdminSettings from "./admin/admin-settings";
+import SettingsOverview from "./admin/settings-overview";
+import { settingsPages, settingsGroups, settingsHomePage, type SettingsSection } from "@/lib/settings-navigation";
+import UserAdmin, {
+  directoryPages,
+  type DirectorySection,
+} from "./admin/user-admin";
 import type { MasterData } from "@/types/master-data";
+import type { UserDirectoryData } from "@/types/user-directory";
 import type { DocumentCatalog } from "@/lib/quality-document-catalog";
 import { clearDocumentDraft } from "@/lib/quality-document-draft";
 import "./dashboard.css";
@@ -79,7 +81,7 @@ const documentPages = [
   },
 ] as const;
 
-const allPages = [...documentPages, ...settingsPages];
+const allPages = [...documentPages, settingsHomePage, ...settingsPages, ...directoryPages];
 
 type Section = "overview" | "account" | (typeof allPages)[number]["id"];
 type UserInfo = { name: string; role: string };
@@ -96,12 +98,13 @@ const defaultNavigation: NavigationState = {
   workType: null,
 };
 const submenuKeys = new Set<string>(
-  documentPages.flatMap((page) => [...page.parents]),
+  [...documentPages.flatMap((page) => [...page.parents]), ...settingsGroups.map((group) => group.id)],
 );
 
 function readNavigation(
   storageKey: string,
   canManage: boolean,
+  departmentCatalog: DepartmentDocumentCatalog,
 ): NavigationState {
   try {
     const saved: unknown = JSON.parse(
@@ -127,29 +130,25 @@ function readNavigation(
       allPages.some(
         (page) =>
           page.id === migratedSection &&
-          (canManage || !page.id.startsWith("settings-")),
+          (canManage ||
+            (!page.id.startsWith("settings-") &&
+              !page.id.startsWith("directory-"))),
       );
-    const validCurriculum = curricula.some((item) => item.value === curriculum);
+    const selectedPage = allPages.find((page) => page.id === migratedSection);
+    const parents = selectedPage && "parents" in selectedPage ? selectedPage.parents : [];
 
     return {
       section: validSection ? (migratedSection as Section) : "overview",
-      curriculum: validCurriculum
-        ? (curriculum as DepartmentSelection["curriculum"])
-        : null,
-      workType:
-        validCurriculum && workTypes.some((item) => item.value === workType)
-          ? (workType as DepartmentSelection["workType"])
-          : null,
-      openKeys: Array.isArray(openKeys)
-        ? [
-            ...new Set(
-              openKeys.filter(
-                (key): key is string =>
-                  typeof key === "string" && submenuKeys.has(key),
-              ),
-            ),
-          ]
-        : [],
+      ...readDepartmentSelection({ curriculum, workType }, departmentCatalog),
+      openKeys: [
+        ...new Set(
+          [...(Array.isArray(openKeys) ? openKeys : []), ...parents].filter(
+            (key): key is string =>
+              typeof key === "string" && submenuKeys.has(key) &&
+              (canManage || !key.startsWith("settings-")),
+          ),
+        ),
+      ],
     };
   } catch {
     return defaultNavigation;
@@ -209,8 +208,8 @@ function buildNavigationItems(
   if (canManage) {
     items.push({
       type: "group",
-      label: "ตั้งค่าข้อมูลพื้นฐาน",
-      children: settingsPages.map((page) => {
+      label: "จัดการผู้ใช้งาน",
+      children: directoryPages.map((page) => {
         const Icon = page.icon;
         return {
           key: page.id,
@@ -218,6 +217,25 @@ function buildNavigationItems(
           label: page.title,
         };
       }),
+    });
+    items.push({
+      type: "group",
+      label: "ตั้งค่าข้อมูลพื้นฐาน",
+      children: [
+        { key: settingsHomePage.id, icon: <settingsHomePage.icon size={18} aria-hidden="true" />, label: "ภาพรวมการตั้งค่า" },
+        ...settingsGroups.map((group) => {
+          const Icon = group.icon;
+          return {
+            key: group.id,
+            icon: <Icon size={18} aria-hidden="true" />,
+            label: group.title,
+            children: settingsPages.filter((page) => page.group === group.id).map((page) => ({
+              key: page.id,
+              label: page.title,
+            })),
+          };
+        }),
+      ],
     });
   }
 
@@ -348,12 +366,16 @@ export default function Dashboard({
   role,
   canManage,
   settings,
+  userDirectory,
   documentCatalog,
+  departmentDocumentCatalog,
 }: UserInfo & {
   userId: string;
   canManage: boolean;
   settings: MasterData | null;
+  userDirectory: UserDirectoryData | null;
   documentCatalog: DocumentCatalog;
+  departmentDocumentCatalog: DepartmentDocumentCatalog;
 }) {
   const storageKey = `e-smart-qa:dashboard:${userId}`;
   const [navigation, setNavigation] =
@@ -371,9 +393,9 @@ export default function Dashboard({
     (section === "account" ? "บัญชีผู้ใช้งาน" : "ภาพรวม Dashboard");
 
   useEffect(() => {
-    setNavigation(readNavigation(storageKey, canManage));
+    setNavigation(readNavigation(storageKey, canManage, departmentDocumentCatalog));
     setRestoredKey(storageKey);
-  }, [storageKey, canManage]);
+  }, [storageKey, canManage, departmentDocumentCatalog]);
 
   function rememberNavigation(next: NavigationState) {
     setNavigation(next);
@@ -570,6 +592,7 @@ export default function Dashboard({
 
           {section === "documents-departments" && (
             <DepartmentDocuments
+              catalog={departmentDocumentCatalog}
               selection={{
                 curriculum: navigation.curriculum,
                 workType: navigation.workType,
@@ -586,10 +609,23 @@ export default function Dashboard({
 
           {section === "documents-all" && <QualityDocumentList />}
 
-          {canManage && settings && section.startsWith("settings-") && (
+          {canManage && settings && section === "settings-overview" && (
+            <SettingsOverview data={settings} onNavigate={navigate} />
+          )}
+
+          {canManage && settings && section.startsWith("settings-") && section !== "settings-overview" && (
             <AdminSettings
+              key={section}
               section={section as SettingsSection}
               data={settings}
+              onNavigate={navigate}
+            />
+          )}
+
+          {canManage && userDirectory && section.startsWith("directory-") && (
+            <UserAdmin
+              section={section as DirectorySection}
+              data={userDirectory}
             />
           )}
 
@@ -597,7 +633,8 @@ export default function Dashboard({
             section !== "documents-departments" &&
             section !== "documents-create" &&
             section !== "documents-all" &&
-            !section.startsWith("settings-") && (
+            !section.startsWith("settings-") &&
+            !section.startsWith("directory-") && (
               <Card className="qa-pending-card mb-9">
                 <Empty
                   image={

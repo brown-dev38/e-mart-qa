@@ -18,14 +18,9 @@ import {
   type TableProps,
 } from "antd";
 import {
-  Building2,
-  GraduationCap,
-  Layers,
-  ListTree,
-  Network,
+  ArrowLeft,
   Pencil,
   Plus,
-  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -37,62 +32,18 @@ import type {
   WfmeStandardType,
 } from "@/types/master-data";
 
-export const settingsPages = [
-  {
-    id: "settings-departments",
-    title: "ข้อมูลหน่วยงานหลัก",
-    description: "จัดการหน่วยงานหลักที่ใช้ประกอบรหัสเอกสารคุณภาพ",
-    icon: Building2,
-    path: ["ตั้งค่าข้อมูลพื้นฐาน", "ข้อมูลหน่วยงานหลัก"],
-  },
-  {
-    id: "settings-sub-departments",
-    title: "ข้อมูลงานย่อยภายใต้หน่วยงานการศึกษา",
-    description: "จัดการงานย่อยภายใต้หน่วยงานการศึกษา (ADM, TCH, ASM, STU)",
-    icon: Network,
-    path: ["ตั้งค่าข้อมูลพื้นฐาน", "ข้อมูลงานย่อย"],
-  },
-  {
-    id: "settings-frameworks",
-    title: "ข้อมูลกรอบเกณฑ์การประเมิน",
-    description: "จัดการกรอบเกณฑ์ WFME และ AUN ที่ใช้ประเมินคุณภาพ",
-    icon: ShieldCheck,
-    path: ["ตั้งค่าข้อมูลพื้นฐาน", "กรอบเกณฑ์การประเมิน"],
-  },
-  {
-    id: "settings-programs",
-    title: "ข้อมูลหลักสูตร",
-    description: "จัดการหลักสูตรและกรอบเกณฑ์ที่ผูกกับแต่ละหลักสูตร",
-    icon: GraduationCap,
-    path: ["ตั้งค่าข้อมูลพื้นฐาน", "ข้อมูลหลักสูตร"],
-  },
-  {
-    id: "settings-levels",
-    title: "ข้อมูลระดับเอกสารคุณภาพ",
-    description: "จัดการระดับเอกสาร QM, SP, WI, FM และ SD",
-    icon: Layers,
-    path: ["ตั้งค่าข้อมูลพื้นฐาน", "ระดับเอกสารคุณภาพ"],
-  },
-  {
-    id: "settings-criteria",
-    title: "โครงสร้างเกณฑ์การประเมิน",
-    description:
-      "จัดการโครงสร้างเกณฑ์ WFME และ AUN แบบลำดับชั้น (Area, Sub-area, Standard)",
-    icon: ListTree,
-    path: ["ตั้งค่าข้อมูลพื้นฐาน", "โครงสร้างเกณฑ์"],
-  },
-] as const;
+import {
+  settingsPages,
+  settingsGroups,
+  type SettingsSection,
+} from "@/lib/settings-navigation";
 
-export type SettingsSection = (typeof settingsPages)[number]["id"];
+export { settingsPages } from "@/lib/settings-navigation";
+export type { SettingsSection } from "@/lib/settings-navigation";
 
-const SECTION_ENTITY: Record<SettingsSection, MasterEntity> = {
-  "settings-departments": "departments",
-  "settings-sub-departments": "sub_departments",
-  "settings-frameworks": "frameworks",
-  "settings-programs": "programs",
-  "settings-levels": "document_levels",
-  "settings-criteria": "criteria",
-};
+const SECTION_ENTITY = Object.fromEntries(
+  settingsPages.map((page) => [page.id, page.entity]),
+) as Record<SettingsSection, MasterEntity>;
 
 const WFME_LABELS: Record<WfmeStandardType, string> = {
   NONE: "ไม่ระบุ",
@@ -189,7 +140,74 @@ function buildCriteriaTree(criteria: QaCriterion[]): Row[] {
 }
 
 function buildConfig(entity: MasterEntity, data: MasterData): EntityConfig {
+  const workflowOptions: Option[] = [
+    { value: "QA", label: "งานประกันคุณภาพ (SAR / APR / CAR)" },
+    { value: "CM", label: "งานบริหารหลักสูตร" },
+    { value: "TCH", label: "งานจัดการเรียนการสอน" },
+    { value: "ASM", label: "งานวัดและประเมินผล" },
+    { value: "ADM", label: "งานรับเข้า" },
+  ];
+  const activeField: FieldConfig = { key: "is_active", label: "เปิดใช้งาน", type: "switch" };
+  const programField: FieldConfig = {
+    key: "program_id", label: "หลักสูตร", type: "select", required: true,
+    options: data.programs.map((item) => ({ value: item.id, label: `${item.code} — ${item.name_th}` })),
+  };
+  const programColumn = {
+    title: "หลักสูตร", dataIndex: "program_id", key: "program_id",
+    render: (id: number) => data.programs.find((item) => item.id === id)?.code ?? "—",
+  };
+  const yearField: FieldConfig = { key: "year", label: "ปี พ.ศ.", type: "number", required: true, min: 2400, max: 3000 };
   switch (entity) {
+    case "academic_years":
+    case "study_years": {
+      const isStudyYear = entity === "study_years";
+      return {
+        description: isStudyYear ? "ชั้นปีสำหรับการเปิดสอนรายวิชา" : "ปีการศึกษาที่ใช้จัดเก็บเอกสาร (พ.ศ.)",
+        addLabel: isStudyYear ? "เพิ่มชั้นปี" : "เพิ่มปีการศึกษา",
+        fields: [{ ...yearField, label: isStudyYear ? "ชั้นปี" : "ปีการศึกษา พ.ศ.", min: isStudyYear ? 1 : 2400, max: isStudyYear ? 20 : 3000 }, activeField],
+        columns: [textColumn(isStudyYear ? "ชั้นปี" : "ปีการศึกษา พ.ศ.", "year"), boolColumn("สถานะ", "is_active")],
+        defaults: { is_active: true }, rows: (source) => source[entity].map((item) => ({ ...item })),
+      };
+    }
+    case "semesters":
+      return {
+        description: "กำหนดภาคการศึกษาที่ใช้ร่วมกันทุกหลักสูตร", addLabel: "เพิ่มภาคการศึกษา",
+        fields: [
+          { key: "code", label: "รหัสภาคการศึกษา", type: "text", required: true, maxLength: 20 },
+          { key: "name_th", label: "ชื่อภาคการศึกษา", type: "text", required: true, maxLength: 100 },
+          { key: "sort_order", label: "ลำดับ", type: "number", min: 0 }, activeField,
+        ],
+        columns: [textColumn("รหัส", "code"), textColumn("ภาคการศึกษา", "name_th"), textColumn("ลำดับ", "sort_order"), boolColumn("สถานะ", "is_active")],
+        defaults: { is_active: true, sort_order: 0 }, rows: (source) => source.semesters.map((item) => ({ ...item })),
+      };
+    case "curriculum_versions":
+      return {
+        description: "ฉบับหลักสูตรจะแสดงเฉพาะหลักสูตรที่ผูกไว้", addLabel: "เพิ่มฉบับหลักสูตร",
+        fields: [programField, yearField, { key: "is_initial", label: "หลักสูตรใหม่ (ปิด = ฉบับปรับปรุง)", type: "switch" }, activeField],
+        columns: [programColumn, textColumn("ปี พ.ศ.", "year"), boolColumn("ประเภทฉบับ", "is_initial", ["หลักสูตรใหม่", "ฉบับปรับปรุง"]), boolColumn("สถานะ", "is_active")],
+        defaults: { is_initial: false, is_active: true }, rows: (source) => source.curriculum_versions.map((item) => ({ ...item })),
+      };
+    case "courses":
+      return {
+        description: "เพิ่มรายวิชา แล้วกำหนดปี ภาคเรียน และชั้นปีในเมนูการเปิดสอนรายวิชา", addLabel: "เพิ่มรายวิชา",
+        fields: [programField, { key: "code", label: "รหัสรายวิชา", type: "text", required: true, maxLength: 30 }, { key: "name_th", label: "ชื่อรายวิชา", type: "text", required: true, maxLength: 200 }, activeField],
+        columns: [programColumn, textColumn("รหัสรายวิชา", "code"), textColumn("ชื่อรายวิชา", "name_th"), boolColumn("สถานะ", "is_active")],
+        defaults: { is_active: true }, rows: (source) => source.courses.map((item) => ({ ...item })),
+      };
+    case "course_offerings": {
+      const fields: FieldConfig[] = [
+        { key: "course_id", label: "รายวิชา", type: "select", required: true, options: data.courses.map((item) => ({ value: item.id, label: `${data.programs.find((program) => program.id === item.program_id)?.code ?? ""} · ${item.code} — ${item.name_th}` })) },
+        { key: "academic_year_id", label: "ปีการศึกษา", type: "select", required: true, options: data.academic_years.map((item) => ({ value: item.id, label: String(item.year) })) },
+        { key: "semester_id", label: "ภาคการศึกษา", type: "select", required: true, options: data.semesters.map((item) => ({ value: item.id, label: item.name_th })) },
+        { key: "study_year_id", label: "ชั้นปี", type: "select", required: true, options: data.study_years.map((item) => ({ value: item.id, label: `ชั้นปีที่ ${item.year}` })) },
+      ];
+      return {
+        description: "กำหนดว่ารายวิชาเปิดสอนในปี ภาคเรียน และชั้นปีใด เพื่อให้ปรากฏในหน้าแยกตามหน่วยงาน", addLabel: "เพิ่มการเปิดสอนรายวิชา",
+        fields: [...fields, activeField],
+        columns: [...fields.map((field) => ({ title: field.label, key: field.key, dataIndex: field.key, render: (id: number) => (field.options as Option[]).find((item) => item.value === id)?.label ?? "—" })), boolColumn("สถานะ", "is_active")],
+        defaults: { is_active: true }, rows: (source) => source.course_offerings.map((item) => ({ ...item })),
+      };
+    }
     case "departments":
       return {
         description:
@@ -281,6 +299,10 @@ function buildConfig(entity: MasterEntity, data: MasterData): EntityConfig {
             maxLength: 150,
           },
           {
+            key: "document_workflow", label: "รูปแบบเอกสาร", type: "select",
+            options: workflowOptions, placeholder: "ไม่เลือก = เอกสารคุณภาพทั่วไป",
+          },
+          {
             key: "sort_order",
             label: "ลำดับการแสดงผล",
             type: "number",
@@ -305,6 +327,7 @@ function buildConfig(entity: MasterEntity, data: MasterData): EntityConfig {
           textColumn("รหัส", "code", 100),
           textColumn("ชื่องานย่อย (ไทย)", "name_th"),
           textColumn("ชื่องานย่อย (อังกฤษ)", "name_en"),
+          { title: "รูปแบบเอกสาร", dataIndex: "document_workflow", key: "document_workflow", render: (value: string | null) => workflowOptions.find((item) => item.value === value)?.label ?? "เอกสารคุณภาพทั่วไป" },
           textColumn("ลำดับ", "sort_order", 90),
           boolColumn("สถานะ", "is_active"),
         ],
@@ -734,10 +757,14 @@ function FieldItem({
 export default function AdminSettings({
   section,
   data,
+  onNavigate,
 }: {
   section: SettingsSection;
   data: MasterData;
+  onNavigate: (section: SettingsSection | "settings-overview") => void;
 }) {
+  const page = settingsPages.find((item) => item.id === section)!;
+  const group = settingsGroups.find((item) => item.id === page.group)!;
   const entity = SECTION_ENTITY[section];
   const config = useMemo(() => buildConfig(entity, data), [entity, data]);
   const router = useRouter();
@@ -839,10 +866,23 @@ export default function AdminSettings({
 
   return (
     <div className="mb-9">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Button type="text" icon={<ArrowLeft size={16} aria-hidden="true" />} onClick={() => onNavigate("settings-overview")}>
+          กลับหน้าตั้งค่า
+        </Button>
+        <Select
+          className="w-full sm:w-72"
+          aria-label={`รายการตั้งค่าในหมวด${group.title}`}
+          value={section}
+          onChange={onNavigate}
+          options={settingsPages.filter((item) => item.group === group.id).map((item) => ({ value: item.id, label: item.title }))}
+        />
+      </div>
       <Card>
         <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <p className="max-w-2xl text-sm leading-6 text-muted">
             {config.description}
+            <span className="mt-2 block text-xs">ทั้งหมด {data[entity].length.toLocaleString("th-TH")} รายการ</span>
           </p>
           <Button
             type="primary"
@@ -866,6 +906,7 @@ export default function AdminSettings({
       </Card>
 
       <Modal
+        forceRender
         open={open}
         title={editing ? `แก้ไข${config.addLabel.replace("เพิ่ม", "")}` : config.addLabel}
         okText="บันทึก"

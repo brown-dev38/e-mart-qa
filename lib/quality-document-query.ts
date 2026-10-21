@@ -1,10 +1,19 @@
 import { prisma } from "./prisma";
-import type { QualityDocumentListItem } from "@/types/quality-document";
+import type { QualityDocumentListItem, QualityDocumentScope } from "@/types/quality-document";
 
-export async function listQualityDocuments(): Promise<
+export async function listQualityDocuments(scope: QualityDocumentScope = {}): Promise<
   QualityDocumentListItem[]
 > {
   const rows = await prisma.docs_qa_documents.findMany({
+    where: {
+      ...(scope.programCode ? { program: { code: scope.programCode } } : {}),
+      ...(scope.departmentCode ? { department: { code: scope.departmentCode } } : {}),
+      ...(scope.subDepartmentCode === null
+        ? { sub_department_id: null }
+        : scope.subDepartmentCode
+          ? { sub_department: { code: scope.subDepartmentCode } }
+          : {}),
+    },
     orderBy: { created_at: "desc" },
     select: {
       id: true,

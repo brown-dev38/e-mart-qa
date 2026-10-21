@@ -4,6 +4,12 @@ export type DocumentSaveResult =
 
 export type QualityDocumentStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
 
+export type QualityDocumentScope = {
+  programCode?: string;
+  departmentCode?: string;
+  subDepartmentCode?: string | null;
+};
+
 export type QualityDocumentListItem = {
   id: string;
   document_code: string;

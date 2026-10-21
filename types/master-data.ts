@@ -1,4 +1,6 @@
-export type MasterEntity =
+import type { AcademicData, AcademicEntity, DocumentWorkflow } from "./academic";
+
+export type MasterEntity = AcademicEntity
   | "departments"
   | "sub_departments"
   | "frameworks"
@@ -19,6 +21,7 @@ export type QaDepartment = {
 };
 
 export type QaSubDepartment = {
+  document_workflow: DocumentWorkflow | null;
   id: number;
   department_id: number;
   code: string;
@@ -72,7 +75,7 @@ export type QaCriterion = {
   is_active: boolean;
 };
 
-export type MasterData = {
+export type MasterData = AcademicData & {
   departments: QaDepartment[];
   sub_departments: QaSubDepartment[];
   frameworks: QaFramework[];

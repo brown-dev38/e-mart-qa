@@ -2,14 +2,15 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import bcrypt from "bcrypt";
+import { seedDepartmentData } from "./seed-department-data.mjs";
 
 const adapter = new PrismaMariaDb(process.env.DATABASE_URL as string);
 const prisma = new PrismaClient({ adapter });
 
-const ROLES: { name: string; employee_id: number }[] = [
-  { name: "admin", employee_id: 1 },
-  { name: "staff", employee_id: 2 },
-  { name: "user", employee_id: 3 },
+const ROLES: { name: string }[] = [
+  { name: "admin" },
+  { name: "staff" },
+  { name: "user" },
 ];
 
 const USERS: { id: number; username: string; role: string; password: string }[] = [
@@ -201,12 +202,12 @@ async function main() {
     if (existing) {
       await prisma.role.update({
         where: { id: existing.id },
-        data: { employee_id: role.employee_id, isActive: true, updated_at: now },
+        data: { is_active: true, updated_at: now },
       });
       console.log(`role "${role.name}" already exists (id=${existing.id})`);
     } else {
       const created = await prisma.role.create({
-        data: { ...role, isActive: true, created_at: now, updated_at: now },
+        data: { ...role, is_active: true, created_at: now, updated_at: now },
       });
       console.log(`role "${role.name}" created (id=${created.id})`);
     }
@@ -221,7 +222,7 @@ async function main() {
       username: spec.username,
       password_hash,
       role_id: role.id,
-      isActive: true,
+      is_active: true,
       updated_at: now,
     };
 
@@ -251,6 +252,7 @@ async function main() {
       throw new Error(`department "${subDepartment.department}" not found`);
     }
     const { department: _department, ...data } = subDepartment;
+    const workFlow = ({ ADM: "ADM", TCH: "TCH", ASM: "ASM" } as const)[data.code as "ADM" | "TCH" | "ASM"] ?? null;
     await prisma.docs_sub_departments.upsert({
       where: {
         department_id_code: {
@@ -262,6 +264,7 @@ async function main() {
       create: {
         ...data,
         department_id: department.id,
+        document_workflow: workFlow,
         created_at: now,
         updated_at: now,
       },
@@ -350,6 +353,8 @@ async function main() {
       },
     });
   }
+
+  await seedDepartmentData(prisma);
 
   const roleCount = await prisma.role.count();
   const userCount = await prisma.users.count();

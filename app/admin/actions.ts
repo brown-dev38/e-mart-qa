@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { deleteMasterRecord, saveMasterRecord } from "@/lib/master-data";
+import { ACADEMIC_ENTITIES } from "@/types/academic";
 import type {
   MasterEntity,
   MasterRecordInput,
@@ -10,6 +11,7 @@ import type {
 } from "@/types/master-data";
 
 const ENTITIES: MasterEntity[] = [
+  ...ACADEMIC_ENTITIES,
   "departments",
   "sub_departments",
   "frameworks",

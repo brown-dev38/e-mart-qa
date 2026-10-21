@@ -1,6 +1,8 @@
 import { auth } from "@/lib/auth";
 import { loadMasterData } from "@/lib/master-data";
+import { loadUserDirectory } from "@/lib/user-directory";
 import { buildDocumentCatalog } from "@/lib/quality-document-catalog";
+import { buildDepartmentDocumentCatalog } from "@/lib/department-documents";
 import { connection } from "next/server";
 import Dashboard from "./dashboard";
 
@@ -36,7 +38,10 @@ export default async function Home() {
   const roleText = role ? (roleLabel[role] ?? role) : "ไม่ระบุบทบาท";
   const canManage = role === "admin";
   const masterData = await loadMasterData();
-  const documentCatalog = buildDocumentCatalog(masterData);
+  const [userDirectory, documentCatalog] = await Promise.all([
+    canManage ? loadUserDirectory() : Promise.resolve(null),
+    Promise.resolve(buildDocumentCatalog(masterData)),
+  ]);
 
   return (
     <Dashboard
@@ -45,7 +50,9 @@ export default async function Home() {
       role={roleText}
       canManage={canManage}
       settings={canManage ? masterData : null}
+      userDirectory={userDirectory}
       documentCatalog={documentCatalog}
+      departmentDocumentCatalog={buildDepartmentDocumentCatalog(masterData)}
     />
   );
 }

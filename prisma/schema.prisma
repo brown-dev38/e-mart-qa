@@ -9,7 +9,7 @@ datasource db {
 model users {
   id                    Int       @id @default(autoincrement())
   refId                 String?   @unique @db.VarChar(191)
-  username              String    @db.Text
+  username              String    @unique @db.VarChar(150)
   email                 String?   @unique @db.VarChar(191)
   password_hash         String?   @db.VarChar(255)
   email_verified_at     DateTime? @db.DateTime(0)
@@ -24,7 +24,7 @@ model users {
   role_id               Int?
   department_id         Int?
   position_id           Int?
-  isActive              Boolean   @default(true)
+  is_active             Boolean   @default(true)
   created_at            DateTime  @db.DateTime(0)
   updated_at            DateTime  @db.DateTime(0)
 
@@ -34,34 +34,31 @@ model users {
 }
 
 model departments {
-  id          Int      @id @default(autoincrement())
-  name        String   @db.Text
-  isActive    Boolean  @default(true)
-  employee_id Int
-  created_at  DateTime @db.DateTime(0)
-  updated_at  DateTime @db.DateTime(0)
+  id         Int      @id @default(autoincrement())
+  name       String   @db.Text
+  is_active  Boolean  @default(true)
+  created_at DateTime @db.DateTime(0)
+  updated_at DateTime @db.DateTime(0)
 
   users users[]
 }
 
 model role {
-  id          Int      @id @default(autoincrement())
-  name        String   @db.Text
-  isActive    Boolean  @default(true)
-  employee_id Int
-  created_at  DateTime @db.DateTime(0)
-  updated_at  DateTime @db.DateTime(0)
+  id         Int      @id @default(autoincrement())
+  name       String   @db.Text
+  is_active  Boolean  @default(true)
+  created_at DateTime @db.DateTime(0)
+  updated_at DateTime @db.DateTime(0)
 
   users users[]
 }
 
 model positions {
-  id          Int      @id @default(autoincrement())
-  name        String   @db.Text
-  isActive    Boolean  @default(true)
-  employee_id Int
-  created_at  DateTime @db.DateTime(0)
-  updated_at  DateTime @db.DateTime(0)
+  id         Int      @id @default(autoincrement())
+  name       String   @db.Text
+  is_active  Boolean  @default(true)
+  created_at DateTime @db.DateTime(0)
+  updated_at DateTime @db.DateTime(0)
 
   users users[]
 }
@@ -91,21 +88,24 @@ model docs_departments {
 
   sub_departments docs_sub_departments[]
   documents       docs_qa_documents[]
+  work_documents  docs_work_documents[]
 }
 
 model docs_sub_departments {
-  id            Int      @id @default(autoincrement()) @db.UnsignedInt
-  department_id Int      @db.UnsignedInt
-  code          String   @db.VarChar(20)
-  name_th       String   @db.VarChar(150)
-  name_en       String?  @db.VarChar(150)
-  sort_order    Int      @default(0) @db.UnsignedInt
-  is_active     Boolean  @default(true)
-  created_at    DateTime @default(now()) @db.Timestamp(0)
-  updated_at    DateTime @default(now()) @updatedAt @db.Timestamp(0)
+  document_workflow docs_document_workflow?
+  id                Int                     @id @default(autoincrement()) @db.UnsignedInt
+  department_id     Int                     @db.UnsignedInt
+  code              String                  @db.VarChar(20)
+  name_th           String                  @db.VarChar(150)
+  name_en           String?                 @db.VarChar(150)
+  sort_order        Int                     @default(0) @db.UnsignedInt
+  is_active         Boolean                 @default(true)
+  created_at        DateTime                @default(now()) @db.Timestamp(0)
+  updated_at        DateTime                @default(now()) @updatedAt @db.Timestamp(0)
 
-  department docs_departments    @relation(fields: [department_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  documents  docs_qa_documents[]
+  department     docs_departments      @relation(fields: [department_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  documents      docs_qa_documents[]
+  work_documents docs_work_documents[]
 
   @@unique([department_id, code])
 }
@@ -135,8 +135,11 @@ model docs_programs {
   created_at   DateTime @default(now()) @db.Timestamp(0)
   updated_at   DateTime @default(now()) @updatedAt @db.Timestamp(0)
 
-  framework docs_accreditation_frameworks @relation(fields: [framework_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  documents docs_qa_documents[]
+  framework           docs_accreditation_frameworks @relation(fields: [framework_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  documents           docs_qa_documents[]
+  curriculum_versions docs_curriculum_versions[]
+  courses             docs_courses[]
+  work_documents      docs_work_documents[]
 
   @@index([framework_id])
 }
@@ -234,4 +237,104 @@ model docs_qa_document_revisions {
   document docs_qa_documents @relation(fields: [document_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([document_id])
+}
+
+enum docs_document_workflow {
+  QA
+  CM
+  TCH
+  ASM
+  ADM
+}
+
+model docs_academic_years {
+  id        Int                     @id @default(autoincrement()) @db.UnsignedInt
+  year      Int                     @unique @db.UnsignedSmallInt
+  is_active Boolean                 @default(true)
+  offerings docs_course_offerings[]
+  documents docs_work_documents[]
+}
+
+model docs_semesters {
+  id         Int                     @id @default(autoincrement()) @db.UnsignedInt
+  code       String                  @unique @db.VarChar(20)
+  name_th    String                  @db.VarChar(100)
+  sort_order Int                     @default(0) @db.UnsignedInt
+  is_active  Boolean                 @default(true)
+  offerings  docs_course_offerings[]
+}
+
+model docs_study_years {
+  id        Int                     @id @default(autoincrement()) @db.UnsignedInt
+  year      Int                     @unique @db.UnsignedTinyInt
+  is_active Boolean                 @default(true)
+  offerings docs_course_offerings[]
+}
+
+model docs_curriculum_versions {
+  id         Int                   @id @default(autoincrement()) @db.UnsignedInt
+  program_id Int                   @db.UnsignedInt
+  year       Int                   @db.UnsignedSmallInt
+  is_initial Boolean               @default(false)
+  is_active  Boolean               @default(true)
+  program    docs_programs         @relation(fields: [program_id], references: [id], onDelete: Restrict)
+  documents  docs_work_documents[]
+
+  @@unique([program_id, year])
+}
+
+model docs_courses {
+  id         Int                     @id @default(autoincrement()) @db.UnsignedInt
+  program_id Int                     @db.UnsignedInt
+  code       String                  @db.VarChar(30)
+  name_th    String                  @db.VarChar(200)
+  is_active  Boolean                 @default(true)
+  program    docs_programs           @relation(fields: [program_id], references: [id], onDelete: Restrict)
+  offerings  docs_course_offerings[]
+
+  @@unique([program_id, code])
+}
+
+model docs_course_offerings {
+  id               Int                   @id @default(autoincrement()) @db.UnsignedInt
+  course_id        Int                   @db.UnsignedInt
+  academic_year_id Int                   @db.UnsignedInt
+  semester_id      Int                   @db.UnsignedInt
+  study_year_id    Int                   @db.UnsignedInt
+  is_active        Boolean               @default(true)
+  course           docs_courses          @relation(fields: [course_id], references: [id], onDelete: Restrict)
+  academic_year    docs_academic_years   @relation(fields: [academic_year_id], references: [id], onDelete: Restrict)
+  semester         docs_semesters        @relation(fields: [semester_id], references: [id], onDelete: Restrict)
+  study_year       docs_study_years      @relation(fields: [study_year_id], references: [id], onDelete: Restrict)
+  documents        docs_work_documents[]
+
+  @@unique([course_id, academic_year_id, semester_id, study_year_id])
+  @@index([academic_year_id, semester_id, study_year_id])
+}
+
+model docs_work_documents {
+  id                    BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  department_id         Int                       @db.UnsignedInt
+  sub_department_id     Int                       @db.UnsignedInt
+  program_id            Int                       @db.UnsignedInt
+  academic_year_id      Int?                      @db.UnsignedInt
+  curriculum_version_id Int?                      @db.UnsignedInt
+  course_offering_id    Int?                      @db.UnsignedInt
+  document_type         String                    @db.VarChar(30)
+  title                 String                    @db.VarChar(500)
+  file_path             String                    @db.VarChar(1000)
+  file_name             String                    @db.VarChar(255)
+  file_size_bytes       BigInt                    @db.UnsignedBigInt
+  created_by            String                    @db.VarChar(100)
+  created_at            DateTime                  @default(now()) @db.Timestamp(0)
+  department            docs_departments          @relation(fields: [department_id], references: [id], onDelete: Restrict)
+  sub_department        docs_sub_departments      @relation(fields: [sub_department_id], references: [id], onDelete: Restrict)
+  program               docs_programs             @relation(fields: [program_id], references: [id], onDelete: Restrict)
+  academic_year         docs_academic_years?      @relation(fields: [academic_year_id], references: [id], onDelete: Restrict)
+  curriculum_version    docs_curriculum_versions? @relation(fields: [curriculum_version_id], references: [id], onDelete: Restrict)
+  course_offering       docs_course_offerings?    @relation(fields: [course_offering_id], references: [id], onDelete: Restrict)
+
+  @@index([department_id, sub_department_id, program_id, academic_year_id])
+  @@index([curriculum_version_id])
+  @@index([course_offering_id])
 }

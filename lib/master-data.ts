@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { loadAcademicData, isAcademicEntity, saveAcademicRecord, deleteAcademicRecord } from "./academic-data";
+import type { DocumentWorkflow } from "@/types/academic";
 import type {
   MasterData,
   MasterEntity,
@@ -107,6 +109,7 @@ export async function loadMasterData(): Promise<MasterData> {
     }),
     prisma.docs_sub_departments.findMany({
       select: {
+        document_workflow: true,
         id: true,
         department_id: true,
         code: true,
@@ -177,6 +180,7 @@ export async function loadMasterData(): Promise<MasterData> {
   ]);
 
   return {
+    ...await loadAcademicData(),
     departments,
     sub_departments,
     frameworks,
@@ -238,6 +242,7 @@ export async function saveMasterRecord(
   entity: MasterEntity,
   input: MasterRecordInput,
 ): Promise<SaveResult> {
+  if (isAcademicEntity(entity)) return saveAcademicRecord(entity, input);
   try {
     const id = recordId(input);
 
@@ -260,6 +265,8 @@ export async function saveMasterRecord(
       }
 
       case "sub_departments": {
+        const workflow = input.document_workflow == null || input.document_workflow === "" ? null : String(input.document_workflow);
+        if (workflow !== null && !["QA", "CM", "TCH", "ASM", "ADM"].includes(workflow)) throw new InputError("รูปแบบเอกสารไม่ถูกต้อง");
         const departmentId = intValue(
           input.department_id,
           "หน่วยงานหลัก",
@@ -268,6 +275,7 @@ export async function saveMasterRecord(
         await requireDepartment(departmentId);
         const data = {
           department_id: departmentId,
+          document_workflow: input.document_workflow === undefined ? undefined : workflow as DocumentWorkflow | null,
           code: text(input.code, "รหัสงานย่อย", 20).toUpperCase(),
           name_th: text(input.name_th, "ชื่องานย่อย (ไทย)", 150),
           name_en: optionalText(input.name_en, "ชื่องานย่อย (อังกฤษ)", 150),
@@ -275,6 +283,12 @@ export async function saveMasterRecord(
           is_active: boolValue(input.is_active, true),
         };
         if (id !== null) {
+          const previous = await prisma.docs_sub_departments.findUniqueOrThrow({ where: { id } });
+          if ((previous.department_id !== data.department_id ||
+            (data.document_workflow !== undefined && previous.document_workflow !== data.document_workflow)) &&
+            await prisma.docs_work_documents.count({ where: { sub_department_id: id } })) {
+            throw new InputError("งานย่อยนี้มีเอกสารแล้ว ไม่สามารถย้ายหน่วยงานหรือเปลี่ยนรูปแบบเอกสารได้");
+          }
           await prisma.docs_sub_departments.update({ where: { id }, data });
         } else {
           await prisma.docs_sub_departments.create({ data });
@@ -391,6 +405,10 @@ export async function deleteMasterRecord(
 ): Promise<SaveResult> {
   try {
     const id = intValue(rawId, "รหัสข้อมูล", 1);
+    if (isAcademicEntity(entity)) {
+      await deleteAcademicRecord(entity, id);
+      return { ok: true };
+    }
     switch (entity) {
       case "departments":
         await prisma.docs_departments.delete({ where: { id } });

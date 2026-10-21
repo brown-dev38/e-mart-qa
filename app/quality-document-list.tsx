@@ -23,6 +23,7 @@ import { listQualityDocumentsAction } from "./documents/actions";
 import type {
   QualityDocumentListItem,
   QualityDocumentStatus,
+  QualityDocumentScope,
 } from "@/types/quality-document";
 
 const STATUS_META: Record<
@@ -53,7 +54,10 @@ function formatBytes(value: string | null): string | null {
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-export default function QualityDocumentList() {
+export default function QualityDocumentList({ scope }: { scope?: QualityDocumentScope }) {
+  const programCode = scope?.programCode;
+  const departmentCode = scope?.departmentCode;
+  const subDepartmentCode = scope?.subDepartmentCode;
   const [documents, setDocuments] = useState<QualityDocumentListItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +70,7 @@ export default function QualityDocumentList() {
 
   const load = useCallback(() => {
     startTransition(async () => {
-      const result = await listQualityDocumentsAction();
+      const result = await listQualityDocumentsAction({ programCode, departmentCode, subDepartmentCode });
       if (result.ok) {
         setDocuments(result.documents);
         setError(null);
@@ -75,7 +79,7 @@ export default function QualityDocumentList() {
       }
       setLoaded(true);
     });
-  }, [startTransition]);
+  }, [startTransition, programCode, departmentCode, subDepartmentCode]);
 
   useEffect(() => {
     load();
@@ -232,7 +236,9 @@ export default function QualityDocumentList() {
   return (
     <div className="mb-9">
       <Card>
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,1fr))_auto]">
+        <div className={`mb-5 grid gap-3 sm:grid-cols-2 ${scope
+          ? "xl:grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))_auto]"
+          : "xl:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,1fr))_auto]"}`}>
           <Input
             allowClear
             prefix={<Search size={16} aria-hidden="true" />}
@@ -241,22 +247,22 @@ export default function QualityDocumentList() {
             onChange={(event) => setSearch(event.target.value)}
             aria-label="ค้นหาเอกสาร"
           />
-          <Select
+          {!scope && <Select
             allowClear
             placeholder="หน่วยงาน"
             options={departmentOptions}
             value={department}
             onChange={setDepartment}
             aria-label="กรองตามหน่วยงาน"
-          />
-          <Select
+          />}
+          {!scope && <Select
             allowClear
             placeholder="หลักสูตร"
             options={programOptions}
             value={program}
             onChange={setProgram}
             aria-label="กรองตามหลักสูตร"
-          />
+          />}
           <Select
             allowClear
             placeholder="ระดับเอกสาร"
@@ -321,7 +327,7 @@ export default function QualityDocumentList() {
               <Empty
                 description={
                   loaded
-                    ? "ยังไม่มีเอกสารคุณภาพในระบบ"
+                    ? scope ? "ยังไม่มีเอกสารสำหรับหลักสูตรและประเภทงานที่เลือก" : "ยังไม่มีเอกสารคุณภาพในระบบ"
                     : "กำลังโหลดรายการเอกสาร…"
                 }
               />

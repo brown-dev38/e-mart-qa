@@ -24,7 +24,7 @@ export const authOptions: NextAuthOptions = {
           include: { role: true },
         });
 
-        if (!user || !user.isActive || !user.password_hash) return null;
+        if (!user || !user.is_active || !user.password_hash) return null;
 
         const valid = await bcrypt.compare(password, user.password_hash);
         if (!valid) return null;

@@ -1,143 +1,114 @@
-# แผนการพอร์ต eSMART_QA2 → Next.js
+# แผนพัฒนาระบบ e-SMART QA (Next.js)
 
-> ต้นทาง: `references/eSMART_QA2.html` (prototype single-file, offline)
-> ปลายทาง: แอป Next.js ใน repo นี้
-> สถานะ: แผน (ยังไม่เริ่มเขียนโค้ด)
-> วิเคราะห์ประกอบ: `references/eSMART_QA2-NOTES.md`
+> ต้นทาง (อ้างอิง/สเปค): `references/eSMART_QA2.html` (prototype single-file, offline) + `eSMART_QA2-NOTES.md`
+> ปลายทาง: แอป Next.js ใน repo นี้ (มีฐานโครงสร้าง + ระบบงานแรกแล้ว)
+> สถานะ: **อยู่ระหว่างพัฒนา** — ฐาน (auth, DB, admin, ทะเบียนเอกสาร) เสร็จแล้ว เหลือระบบงานที่เหลือ
+> หมายเหตุ: แผนเดิมเป็น "พอร์ต prototype แบบ offline/JSON" แต่ทิศทางจริง **pivot ไปเป็น DB-backed app** (Prisma + MySQL) เอกสารนี้จึงถูกปรับให้ตรงกับโค้ดจริง
 
 ---
 
 ## 1. เป้าหมายและหลักการ
 
-- ย้ายระบบ e-SMART QA จาก prototype ไฟล์เดียว → แอป Next.js ที่ maintain / test / ขยายได้
-- **รักษาความถูกต้องของกติกาโดเมน (parity)** — prototype เป็น golden reference ใช้เทียบผล
-- แยกชั้นให้ชัด: **data → domain (pure) → UI** ก่อน แล้วค่อยผูก persistence / auth
-- ไม่ทำ big-bang rewrite — ทำเป็น **vertical slice** ทีละโมดูล พร้อมใช้งานได้จริง
+- พัฒนาระบบ e-SMART QA เป็นแอป Next.js ที่ maintain / test / ขยายได้บนฐานข้อมูลจริง
+- **prototype เดิมเป็นแค่ reference/สเปค** (โครงสร้างข้อมูล กติกาโดเมน) — การนำโค้ดฝังใน single-file **ไม่ถูก port ตรง ๆ** เพราะ pivot ไปใช้ DB
+- แยกชั้นให้ชัด: **UI (React) → server actions → domain/logic → Prisma/DB**
+- ไม่ทำ big-bang — ทำเป็น **vertical slice** ทีละระบบงาน พร้อมใช้งานได้จริง
 
 ## 2. สถานะปัจจุบัน
 
-**Scaffold (repo นี้)**
+**Scaffold & toolchain**
 - Next.js `16.4.0` (App Router) + React `19.3.0` + TypeScript strict
-- Tailwind CSS v4 (`@import "tailwindcss"` + `@tailwindcss/turbopack`)
+- UI: Tailwind CSS v4 + **Ant Design v6** (`@ant-design/nextjs-registry` + `<AntdRegistry layer>`)
+- ฐานข้อมูล: **Prisma 7 + MySQL** ผ่าน `@prisma/adapter-mariadb` (ใช้ standalone MySQL Server ที่ติดตั้ง) — `lib/prisma.ts`
 - `next.config.ts`: `cacheComponents: true`, `partialPrefetching: true`, `experimental.agentFeedback: true`
-- ยังไม่มี: ระบบ routing ของโมดูล, data layer, domain layer, persistence
 
-**Prototype (`references/eSMART_QA2.html`)**
-- single-file ~3.3 MB, CSS+JS ฝังใน, ไม่มี dependency, offline (CSP `connect-src 'none'`)
-- 7 โมดูลระบบงาน + 3 core stores + 6 pane + แผนผัง WFME
-- persistence = save/load ไฟล์ JSON (ไม่มี DB)
-- cross-module สื่อสารด้วย `CustomEvent` + global bridge
+**Auth (เสร็จแล้ว)**
+- NextAuth v4 Credentials (username/password) + JWT session — `lib/auth.ts`, `app/api/auth/[...nextauth]/route.ts`
+- หน้า `/login`, logout, gating ที่ server page / server action
+- บทบาท: `admin`, `staff`, `user` (จากตาราง `role`)
 
-## 3. ข้อกำหนดเบื้องต้น (ต้องทำก่อนเขียนโค้ด)
+**Data layer / Admin (เสร็จแล้ว)**
+- Schema: ตาราง core (`users`, `role`, `departments`, `positions`) + `docs_*` master tables (`docs_departments`, `docs_sub_departments`, `docs_accreditation_frameworks`, `docs_programs`, `docs_document_levels`, `docs_qa_criteria`, `docs_qa_documents`, `docs_qa_document_revisions`) — `prisma/schema.prisma`
+- ตาราง `departments`, `positions`, `role` ไม่มี `employee_id` แล้ว (migration `20261021010000_remove_unused_employee_id`); ผู้ใช้งานเชื่อมกับแต่ละตารางผ่าน `users.department_id`, `users.position_id`, `users.role_id` → `id`
+- Migrations + seed (roles, users, departments, subunits, frameworks, programs, document levels, QA criteria) — `prisma/seed.ts`
+- Admin จัดการ master data (เพิ่ม/แก้/ลบ 6 กลุ่ม) — `app/admin/actions.ts` (server actions, เฉพาะ `admin`) + UI `app/admin/admin-settings.tsx`
+- Business logic/validation: `lib/master-data.ts` (`loadMasterData`, `saveMasterRecord`, `deleteMasterRecord`)
 
-- **อ่านเอกสาร Next 16 ก่อนทุกครั้ง** ที่ `node_modules/next/dist/docs/` โดยเฉพาะ `01-app/01-getting-started`, `01-app/03-api-reference`, `01-app/02-guides` — เวอร์ชันนี้มี breaking changes จากที่รู้ (ดู `AGENTS.md`)
-- ยืนยันการตัดสินใจเชิงสถาปัตยกรรมในข้อ 7 ให้ครบก่อนเริ่ม Phase 1
+**ทะเบียนเอกสารคุณภาพ (เสร็จแล้ว)**
+- หน้าแยกตามหน่วยงานเชื่อมฐานข้อมูลครบตามสเปค: QA/SAR/APR/CAR, ฉบับหลักสูตร, มคอ.3/มคอ.5/ผลประเมิน, ผลการศึกษา และประกาศรับสมัคร พร้อมหน้าตั้งค่าปี/ภาคเรียน/ชั้นปี/รายวิชา/การเปิดสอน — ดู `department-documents-setup.md`
+- สร้างเอกสาร + list + ดูตามหน่วยงาน — `app/quality-document-*.tsx`, `app/department-documents.tsx`
+- Server actions: `app/documents/actions.ts`; logic: `lib/quality-document-save.ts`, `...-query.ts`, `...-catalog.ts`, `...-draft.ts`
+- Dashboard workspace (sidebar, breadcrumb, mobile drawer) — `app/dashboard.tsx`
 
-## 4. สถาปัตยกรรมเป้าหมาย (โครงสร้างโฟลเดอร์ที่เสนอ)
+## 3. ข้อกำหนดเบื้องต้น
+
+- **อ่านเอกสาร Next 16 ก่อนทุกครั้ง** ที่ `node_modules/next/dist/docs/` (โดยเฉพาะ `01-app/01-getting-started`, `01-app/03-api-reference`, `01-app/02-guides`) — เวอร์ชันนี้มี breaking changes จากที่รู้ (ดู `AGENTS.md`)
+- หลังแก้ `prisma/schema.prisma` → รัน `npx prisma generate` (และ migrate ถ้าเปลี่ยนโครงสร้าง) — client ที่ค้างเก่าเป็นสาเหตุ error "model undefined"
+- ทำคนละ feature เป็น feature branch (สอดคล้องกับ workflow ที่ใช้)
+
+## 4. สถาปัตยกรรมปัจจุบัน (จริงใน repo)
 
 ```
 app/
-  layout.tsx                 # theme + a11y shell
-  page.tsx                   # dashboard / ทางเข้าโมดูล
-  (systems)/
-    sar/…                    # E-SAR
-    process/…                # E-Process
-    tracking/…               # E-Tracking
-    kpi/…                    # E-KPI
-    cqi/…                    # E-CQI
-    documents/…              # E-Document
-    audit/…                  # E-Audit
-    registry/…               # ทะเบียนเอกสารกลาง
-    approval/…               # คำขอ / อนุมัติ
-    wfme/…                   # แผนผัง WFME + traceability + เกณฑ์ 3.4.1
-data/                        # แยกจาก embedded JSON (static, typed)
-  processes.json
-  sar-forms.json
-  approval-policy.json
-  wfme-map.json
+  layout.tsx / page.tsx            # root layout + dashboard page (server, auth-gate)
+  dashboard.tsx                    # workspace UI (client)
+  login/page.tsx                   # หน้า login
+  api/auth/[...nextauth]/route.ts  # NextAuth API
+  documents/actions.ts             # server actions: เอกสารคุณภาพ
+  admin/actions.ts                 # server actions: master data (admin only)
+  admin/admin-settings.tsx         # UI จัดการ master data
+  quality-document-form.tsx / -list.tsx / department-documents.tsx
+  ui-provider.tsx / sign-out-button.tsx
 lib/
-  domain/
-    registry/                # จาก qaStore
-    approval/                # จาก approvalStore (state machine)
-    suite/                   # จาก suiteStore (multi-year)
-  validation/                # sanitize / validate ที่ใช้ร่วม
-  state/                     # แทน CustomEvent bus + global stores
-types/                       # โดเมนไทป์ (Doc, Request, Report, …)
-components/
-  ui/                        # primitives
-  systems/                   # คอมโพเนนต์รายโมดูล
+  prisma.ts                        # PrismaClient + MariaDB adapter (singleton)
+  auth.ts                          # NextAuth options + auth()
+  master-data.ts                   # โดเมน master data (load/save/delete + validate)
+  quality-document-*.ts            # โดเมนทะเบียนเอกสาร (save/query/catalog/draft)
+prisma/
+  schema.prisma                    # โมเดล + enum
+  migrations/                      # baseline + add docs_* tables
+  seed.ts                          # roles/users/master data/QA criteria
+types/
+  master-data.ts / quality-document.ts / next-auth.d.ts
 ```
 
 ## 5. แผนดำเนินงาน (Phases)
 
-### Phase 0 — Foundations & Decisions
-- อ่านเอกสาร Next 16 ที่เกี่ยวข้อง
-- เคลียร์การตัดสินใจข้อ 7 ทั้งหมด
-- ตกลงกลยุทธ์ styling (port CSS เดิม vs rebuild ด้วย Tailwind v4) และ state management
+### ✅ เสร็จแล้ว
+- **Foundation** — scaffold, Tailwind v4 + antd, Prisma 7 + MySQL, migrations, seed
+- **Auth** — NextAuth credentials, /login, JWT, role gating, logout
+- **Master data admin** — CRUD 6 กลุ่ม (admin), validation แบบ domain
+- **E-Document registry** — create/list/แยกตามหน่วยงาน
 
-### Phase 1 — Extract static data
-- ดึง JSON ที่ฝังใน `<script type="application/json">` ออกเป็นไฟล์ใน `data/`:
-  `qa-unified-data`, `sar-form-source`, `approval-policy-source`, `wfme-map-data`
-- แยกฟอนต์ (WM Sarabun) และรูป WFME ออกจาก base64 → static asset
-- เขียน type ให้ครบ + script ตรวจความสอดคล้องของข้อมูล
-- **ผลลัพธ์:** ข้อมูลที่ type-safe, ไม่มี logic
+### ⬜ เหลือ (vertical slice ต่อ)
+- **E-SAR** — forms 09–15, หน่วยงาน, multi-year, gaps, summary, export รายงาน
+- **E-Process / E-Tracking / E-KPI / E-CQI / E-Audit** — ตาราง + form + metric (ต่อจาก pattern ที่วางไว้)
+- **กฎระเบียบข้อบังคับ (Regulations)** — ปัจจุบันเป็น placeholder
+- **Approval / workflow** — draft→review→approved→published (ถ้าจำเป็นร่วมกับทะเบียนเอกสาร)
+- **WFME layer** — แผนผัง WFME, traceability, หลักฐานเกณฑ์ 3.4.1 (อ้างอิง `docs/แผนผังข้อมูล WFME.png`, `เกณฑ์-wfme-2568-new.pdf`)
+- **Cross-cutting** — เอกสาร/รายงาน export, a11y/print/responsive review, hardening
 
-### Phase 2 — Port core domain (pure TS + tests)
-- `registry` ← `qaStore`: ลำดับชั้นเอกสาร, ออกรหัส, `validate`, sanitize (คงกติกา prototype)
-- `approval` ← `approvalStore`: state machine (draft→review→returned→approved→published/cancelled/withdrawn), policy resolution, snapshot change detection, role authorization
-- `suite` ← `suiteStore`: ข้อมูลรายปี, needs/goals/tasks/audits/reviews, `switchYear`
-- **ตัด DOM/`window`/`CustomEvent` ออกทั้งหมด** → pure functions
-- เขียน unit test (parity กับ prototype) เป็นด่านกันถอยหลัง
+## 6. สถานะการตัดสินใจ (เดิมในข้อ 7 → ตัดสินแล้ว)
 
-### Phase 3 — Vertical slice แรก: E-Document + registry
-- ทำ routing + UI ครบ loop: list → form → save → validate
-- ต่อ persistence (import/export JSON) ให้เทียบเท่า prototype
-- วาง pattern ของ state/UI ที่โมดูลอื่นจะใช้ซ้ำ
+| ประเด็น | ข้อสรุป | หมายเหตุ |
+| --- | --- | --- |
+| Persistence | **MySQL ผ่าน Prisma 7 (adapter-mariadb)** | ไม่ใช่ import/export JSON แบบ prototype แล้ว |
+| State | React state + Context + localStorage (draft/nav) + **server actions** | ไม่มี global store/CustomEvent bus |
+| Styling | **Tailwind v4 + Ant Design v6** | ไม่ port CSS/JS เดิมจาก prototype |
+| Auth | **NextAuth v4 (credentials, JWT)** — จริงแล้ว | roles: admin/staff/user |
+| Rendering | Server Components (page/auth/master data) + client สำหรับ interactive ส่วนใหญ่ | — |
+| i18n / ภาษา | **ไทย monolingual** (`lang="th"`) | — |
 
-### Phase 4 — E-SAR
-- forms 09–15, units (8 หน่วยงาน), multi-year, gaps, summary, export รายงาน
-- โมดูลซับซ้อนสุด ใช้ pattern จาก Phase 3
+## 7. ความเสี่ยง
 
-### Phase 5 — โมดูลที่เหลือ
-- E-Process, E-Tracking, E-KPI, E-CQI, E-Audit (โดยมากเป็นตาราง + form + metric)
+- **Prisma client stale** — หลังรับโค้ดใหม่/เปลี่ยน schema ต้องรัน `prisma generate` เสมอ ไม่งั้นเจอ "model undefined"
+- Prisma 7 เปลี่ยน default output dir + driver adapter — ต้องอ่าน `PRISMA-SETUP-NOTES.md` ก่อนแตะ DB
+- ระบบเดิม (SAR ฯลฯ) ซับซ้อน — ควร port เป็น vertical slice พร้อม domain logic/validation แยกจาก UI
+- Next 16 breaking changes — ยึด docs ในเครื่องเป็นหลัก (ดู AGENTS.md)
 
-### Phase 6 — WFME layer
-- แผนผัง WFME (มุมมองย่อ + ภาพต้นฉบับ), traceability, หลักฐานข้อ 3.4.1 + สิทธิ์เข้าถึง, approval UI
+## 8. นิยามเสร็จ (Definition of Done) ต่อ feature/phase
 
-### Phase 7 — Cross-cutting & hardening
-- Navigation shell (sidebar 7 ระบบ), theme light/dark, a11y, print styles
-- ตรวจ parity ทั้งระบบ, จัดการ persistence/auth ตามข้อ 7
-
-## 6. การแมป prototype → Next.js (สรุป)
-
-| Prototype | ปลายทาง |
-| --- | --- |
-| `<script type="application/json">` ฝังใน | `data/*.json` + types |
-| `qaStore` / `approvalStore` / `suiteStore` | `lib/domain/*` (pure TS) |
-| `sarBridge` / `qualityBridge` / `window.suiteApp` | โมดูล domain + state layer |
-| `CustomEvent` (quality-navigate, suite-render, …) | state management กลาง |
-| IIFE + DOM manipulation | React components + App Router |
-| save/load ไฟล์ JSON | persistence layer (ดูข้อ 7) |
-
-## 7. การตัดสินใจที่ต้องเคลียร์ก่อนเริ่ม (blockers)
-
-1. **Persistence** — คงเป็น import/export ไฟล์ JSON แบบ original หรือย้ายไป DB/API server
-2. **State management** — React Context / Zustand / อื่น ๆ แทน global stores + event bus
-3. **Styling** — port CSS custom-property เดิม หรือ rebuild ด้วย Tailwind v4 (ระบบนี้ custom เยอะ)
-4. **Auth** — เพิ่มจริงหรือยัง (prototype ระบุว่ายังไม่มี auth / ลายมือชื่อดิจิทัล)
-5. **Rendering strategy** — interactive เป็นหลัก → client-heavy; ระบุว่าส่วนไหนเป็น Server Component ได้
-6. **i18n / ภาษา** — ยืนยันว่าเป็นไทย monolingual
-
-## 8. ความเสี่ยง
-
-- parity ของ approval engine + registry validation (ซับซ้อน, ฝังใน string) — ต้องมี test
-- ข้อมูล WFME/ฟอนต์ base64 ขนาดใหญ่ — ต้องย้ายเป็น asset อย่างถูกวิธี
-- CSS custom เยอะ — rebuild ด้วย Tailwind อาจเสี่ยงเสียรายละเอียด (a11y/print/responsive)
-- Next 16 breaking changes — ต้องยึด docs ในเครื่องเป็นหลัก
-
-## 9. นิยามเสร็จ (Definition of Done) ต่อ phase
-
-- ผ่าน type check + lint + unit test
-- ผลลัพธ์ตรงกับ prototype (parity) สำหรับเส้นทางที่เทียบได้
-- ไม่มี regression ด้าน a11y / responsive / print
-- commit แยกตาม phase
+- ผ่าน type check + lint
+- ทำงานจริงบน MySQL (seed/migrate ครบ) และไม่ทำให้ error "model undefined"
+- กดใช้งานครบ loop (list → form → save → validate) และ role gate ถูกต้อง
+- commit แยกตาม feature
