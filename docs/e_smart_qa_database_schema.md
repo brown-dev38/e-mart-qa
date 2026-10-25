@@ -1,6 +1,6 @@
 # โครงสร้างฐานข้อมูลระบบ e-SMART QA
 
-ปรับปรุงวันที่ **22 ตุลาคม 2569 (2026-10-22)** ตาม [Prisma schema](../prisma/schema.prisma) และ [migrations](../prisma/migrations/) ใน repository ครอบคลุม **19 ตาราง และ 3 enums** เอกสารนี้อธิบายโครงสร้างตามโค้ด ไม่ใช่ผลตรวจฐานข้อมูลที่กำลังให้บริการ
+ปรับปรุงวันที่ **24 ตุลาคม 2569 (2026-10-24)** ตาม [Prisma schema](../prisma/schema.prisma) และ [migrations](../prisma/migrations/) ใน repository ครอบคลุม **22 ตาราง และ 5 enums** เอกสารนี้อธิบายโครงสร้างตามโค้ด ไม่ใช่ผลตรวจฐานข้อมูลที่กำลังให้บริการ
 
 การใช้งาน สิทธิ์ สถาปัตยกรรม และการติดตั้งอยู่ที่ [เอกสารระบบ](./e_smart_qa_system_documentation.md) ส่วนขั้นตอนเอกสารแยกตามงานอยู่ที่ [department-documents-setup.md](./department-documents-setup.md)
 
@@ -37,6 +37,9 @@
 | 17 | `docs_courses` | รายวิชา |
 | 18 | `docs_course_offerings` | การเปิดสอนรายวิชา |
 | 19 | `docs_work_documents` | เอกสารตามประเภทงาน |
+| 20 | `docs_qa_review_events` | ประวัติการจัดทำ ส่งตรวจ ส่งกลับ และอนุมัติ |
+| 21 | `audit_logs` | ประวัติการทำงานรวมทั้งระบบ ไม่มี FK ไปข้อมูลต้นทาง |
+| 22 | `docs_qa_submissions` | สำเนาร่าง 000 และผลตรวจของแต่ละรอบส่งตรวจ |
 
 ## 3. ความสัมพันธ์ (ER Diagram)
 
@@ -57,6 +60,9 @@ erDiagram
     docs_document_levels ||--o{ docs_qa_documents : document_level_id
     docs_qa_criteria ||--o{ docs_qa_documents : criterion_id
     docs_qa_documents ||--o{ docs_qa_document_revisions : document_id
+    docs_qa_document_revisions ||--o{ docs_qa_review_events : revision_id
+    docs_qa_document_revisions ||--o{ docs_qa_submissions : revision_id
+    docs_qa_submissions o|--o{ docs_qa_review_events : submission_id
     docs_programs ||--o{ docs_curriculum_versions : program_id
     docs_programs ||--o{ docs_courses : program_id
     docs_courses ||--o{ docs_course_offerings : course_id
@@ -235,7 +241,8 @@ erDiagram
 | `program_id` | INT UNSIGNED | NN, FK → docs_programs.id | — | หลักสูตร |
 | `document_level_id` | INT UNSIGNED | NN, FK → docs_document_levels.id | — | ระดับเอกสารคุณภาพ |
 | `criterion_id` | INT UNSIGNED | NN, FK → docs_qa_criteria.id | — | เกณฑ์ที่เอกสารอ้างอิง |
-| `current_version` | VARCHAR(20) | NN | "1.0" | เวอร์ชันปัจจุบัน |
+| `current_version` | VARCHAR(20) | NN | "000" | ฉบับอนุมัติปัจจุบัน; 000 = ยังไม่อนุมัติ |
+| `approved_revision_no` | SMALLINT UNSIGNED | NN | 0 | ตัวนับเลขฉบับ เพิ่มเมื่ออนุมัติภายใต้ transaction |
 | `effective_date` | DATE | NULL | — | วันที่เริ่มใช้ |
 | `review_date` | DATE | NULL | — | วันที่ทบทวน |
 | `file_path` | VARCHAR(1000) | NULL | — | เส้นทางไฟล์ |
@@ -248,6 +255,14 @@ erDiagram
 | `created_at` | TIMESTAMP(0) | NN | now() | เวลาสร้าง |
 | `updated_at` | TIMESTAMP(0) | NN, @updatedAt | now() | เวลาแก้ไขล่าสุด |
 
+คอลัมน์เพิ่มเติมในทะเบียน `docs_qa_documents` สำหรับลบออกจากรายการใช้งาน โดยไม่ลบไฟล์หรือประวัติ:
+
+| คอลัมน์ | ชนิดข้อมูล | ข้อกำหนด | Default | ความหมาย |
+| --- | --- | --- | --- | --- |
+| `deleted_at` | TIMESTAMP(3) | NULL | — | เวลาที่ลบออกจากรายการ |
+| `deleted_by` | VARCHAR(100) | NULL | — | บัญชีผู้ลบ ไม่มี FK |
+| `deletion_reason` | VARCHAR(1000) | NULL | — | เหตุผลที่ลบ |
+
 ### 4.12 `docs_qa_document_revisions` — ประวัติไฟล์เอกสารคุณภาพ
 
 | คอลัมน์ | ชนิดข้อมูล | ข้อกำหนด | Default | ความหมาย |
@@ -256,12 +271,23 @@ erDiagram
 | `document_id` | BIGINT UNSIGNED | NN, FK → docs_qa_documents.id | — | เอกสารต้นทาง |
 | `version_label` | VARCHAR(20) | NN | — | ชื่อเวอร์ชัน |
 | `change_note` | TEXT | NULL | — | บันทึกการเปลี่ยนแปลง |
-| `file_path` | VARCHAR(1000) | NN | — | เส้นทางไฟล์ |
-| `file_name` | VARCHAR(255) | NN | — | ชื่อไฟล์เดิม |
+| `file_path` | VARCHAR(1000) | NULL | — | เส้นทางไฟล์; ร่างยังไม่แนบไฟล์ได้ |
+| `file_name` | VARCHAR(255) | NULL | — | ชื่อไฟล์เดิม |
 | `file_mime_type` | VARCHAR(100) | NULL | — | MIME type |
 | `file_size_bytes` | BIGINT UNSIGNED | NULL | — | ขนาดไฟล์เป็นไบต์ |
 | `uploaded_by` | VARCHAR(100) | NULL | — | รหัสผู้อัปโหลดในรูปข้อความ ไม่มี FK |
 | `created_at` | TIMESTAMP(0) | NN | now() | เวลาสร้าง |
+| `title` | VARCHAR(500) | NN | — | ชื่อเอกสารของฉบับนี้ |
+| `description` | TEXT | NULL | — | คำอธิบายของฉบับนี้ |
+| `status` | ENUM('DRAFT','PENDING','APPROVED') | NN | DRAFT | สถานะฉบับ |
+| `revision_number` | SMALLINT UNSIGNED | NULL | — | เลขฉบับอนุมัติ; ร่างและประวัติรุ่นเก่าอาจเป็น NULL |
+| `open_slot` | TINYINT UNSIGNED | NULL | — | 1 = ฉบับร่าง/รออนุมัติ, NULL = ฉบับอนุมัติ |
+| `lock_version` | INT UNSIGNED | NN | 0 | เพิ่มทุกครั้งที่แก้ไข/เปลี่ยนสถานะ ป้องกันคำขอเก่า |
+| `submitted_by` | VARCHAR(100) | NULL | — | ผู้ส่งตรวจ ไม่มี FK |
+| `submitted_at` | TIMESTAMP(0) | NULL | — | เวลาส่งตรวจล่าสุด |
+| `approved_by` | VARCHAR(100) | NULL | — | ผู้อนุมัติ ไม่มี FK |
+| `approved_at` | TIMESTAMP(0) | NULL | — | เวลาอนุมัติ |
+| `updated_at` | TIMESTAMP(3) | NN, @updatedAt | now() | เวลาแก้ไขล่าสุด |
 
 ### 4.13 `docs_academic_years` — ปีการศึกษา พ.ศ.
 
@@ -339,13 +365,71 @@ erDiagram
 | `created_by` | VARCHAR(100) | NN | — | รหัสผู้เพิ่มในรูปข้อความ ใช้ตรวจสิทธิ์ลบ ไม่มี FK |
 | `created_at` | TIMESTAMP(0) | NN | now() | เวลาสร้าง |
 
-### 4.20 ข้อสังเกตของคอลัมน์
+### 4.20 `docs_qa_review_events` — ประวัติการตรวจสอบอนุมัติ
+
+| คอลัมน์ | ชนิดข้อมูล | ข้อกำหนด | Default | ความหมาย |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | NN, PK, AI | AI | รหัสประวัติ |
+| `revision_id` | BIGINT UNSIGNED | NN, FK → docs_qa_document_revisions.id | — | ฉบับเอกสาร |
+| `submission_id` | BIGINT UNSIGNED | NULL, FK → docs_qa_submissions.id | — | รอบส่งตรวจที่เกี่ยวข้อง; ประวัติเก่าอาจไม่มี |
+| `action` | VARCHAR(30) | NN | — | CREATE, EDIT, SUBMIT, RETURN, APPROVE |
+| `actor_id` | VARCHAR(100) | NN | — | รหัสผู้ดำเนินการ ไม่มี FK |
+| `actor_name` | VARCHAR(150) | NN | — | ชื่อบัญชีขณะดำเนินการ |
+| `comment` | TEXT | NULL | — | ความเห็นหรือเหตุผล |
+| `created_at` | TIMESTAMP(3) | NN | now() | เวลาดำเนินการ |
+
+### 4.21 `audit_logs` — ประวัติการทำงานรวม
+
+| คอลัมน์ | ชนิดข้อมูล | ข้อกำหนด | Default | ความหมาย |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | NN, PK, AI | AI | รหัสประวัติ |
+| `actor_id` | VARCHAR(100) | NULL | — | ID ผู้ดำเนินการ; ไม่มี FK |
+| `actor_name` | VARCHAR(150) | NN | — | ชื่อบัญชีขณะเกิดเหตุการณ์ |
+| `action` | VARCHAR(30) | NN | — | CREATE, UPDATE, DELETE, REVISION_CREATE, EDIT, SUBMIT, RETURN, APPROVE, LOGIN, LOGOUT |
+| `entity_type` | VARCHAR(30) | NN | — | ประเภทข้อมูล เช่น QUALITY_DOCUMENT, USER, MASTER_DATA |
+| `entity_id` | VARCHAR(100) | NULL | — | ID รายการต้นทางเมื่อทราบ ไม่มี FK |
+| `entity_label` | VARCHAR(500) | NULL | — | รหัสหรือชื่ออ้างอิงขณะเกิดเหตุการณ์ |
+| `outcome` | VARCHAR(20) | NN | SUCCESS | SUCCESS, FAILED, STARTED |
+| `summary` | VARCHAR(1000) | NN | — | รายละเอียดสรุป |
+| `details` | JSON | NULL | — | รายละเอียดเพิ่มเติมตามฟิลด์ที่อนุญาต ไม่เก็บข้อมูลลับ |
+| `created_at` | TIMESTAMP(3) | NN | now() | เวลาเกิดเหตุการณ์ |
+
+### 4.22 `docs_qa_submissions` — สำเนาร่างส่งตรวจ
+
+| คอลัมน์ | ชนิดข้อมูล | ข้อกำหนด | Default | ความหมาย |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | NN, PK, AI | AI | รหัสสำเนา |
+| `revision_id` | BIGINT UNSIGNED | NN, FK → docs_qa_document_revisions.id | — | revision ต้นทาง |
+| `round_no` | INT UNSIGNED | NN | — | รอบส่งตรวจของ revision นี้ |
+| `target_revision_no` | SMALLINT UNSIGNED | NN | — | เลขฉบับที่เสนออนุมัติ เช่น 1 แสดงเป็น 001 |
+| `title` | VARCHAR(500) | NN | — | ชื่อเรื่องขณะส่งตรวจ |
+| `description` | TEXT | NULL | — | คำอธิบายขณะส่งตรวจ |
+| `change_note` | TEXT | NULL | — | รายละเอียดการแก้ไขขณะส่งตรวจ |
+| `file_path` | VARCHAR(1000) | NN | — | เส้นทางสำเนาไฟล์แยกใน storage |
+| `file_name` | VARCHAR(255) | NN | — | ชื่อไฟล์เดิม |
+| `file_mime_type` | VARCHAR(100) | NULL | — | MIME type |
+| `file_size_bytes` | BIGINT UNSIGNED | NN | — | ขนาดสำเนา |
+| `file_sha256` | CHAR(64) | NULL | — | SHA-256; นำเข้ารายการเก่าที่ยังทำสำเนาไม่เสร็จอาจว่าง |
+| `submitted_by` | VARCHAR(100) | NN | — | ID ผู้ส่ง ไม่มี FK |
+| `submitted_name` | VARCHAR(150) | NN | — | ชื่อบัญชีขณะส่ง |
+| `submitted_at` | TIMESTAMP(3) | NN | — | เวลาส่งตรวจ |
+| `captured_at` | TIMESTAMP(3) | NN | now() | เวลาเก็บสำเนาจริง |
+| `source` | VARCHAR(20) | NN | SUBMITTED | SUBMITTED หรือ LEGACY_PENDING |
+| `status` | ENUM('PENDING','RETURNED','APPROVED') | NN | PENDING | ผลของรอบส่งตรวจ |
+| `reviewed_by` | VARCHAR(100) | NULL | — | ID ผู้ตรวจ ไม่มี FK |
+| `reviewed_name` | VARCHAR(150) | NULL | — | ชื่อบัญชีผู้ตรวจขณะตัดสิน |
+| `reviewed_at` | TIMESTAMP(3) | NULL | — | เวลาส่งกลับหรืออนุมัติ |
+| `review_comment` | TEXT | NULL | — | ความเห็น/เหตุผลส่งกลับ |
+
+เนื้อหาและไฟล์สำเนาไม่ถูกแก้ผ่าน application หลังส่งตรวจ อัปเดตเฉพาะผลตรวจครั้งเดียวภายใน transaction ที่ล็อกทะเบียน สำเนาเก่าไม่เปลี่ยนเป็นฉบับ 001 แต่เชื่อมกับ revision ที่อนุมัติผ่าน revision_id และ target_revision_no
+
+### 4.23 ข้อสังเกตของคอลัมน์
 
 - users และ lookup ของผู้ใช้ใช้ DATETIME(0) ไม่มี default และไม่มี @updatedAt ผู้เรียกต้องกำหนดวันเวลาตามการทำงานของแต่ละฟังก์ชัน
 - updated_at ของตารางเอกสารที่มี @updatedAt ถูกจัดการโดย Prisma; migration ให้ default CURRENT_TIMESTAMP(0) แต่ไม่ได้สร้าง ON UPDATE CURRENT_TIMESTAMP การแก้ SQL โดยตรงต้องระบุเวลาแก้ไขเอง
 - ตารางปี/ภาค/ชั้นปี/ฉบับหลักสูตร/รายวิชา/การเปิดสอนไม่มี created_at และ updated_at
 - BIGINT ของรหัสและขนาดไฟล์ถูกแปลงเป็น string ก่อนส่งให้ client เพื่อให้ serialize ได้
-- docs_qa_document_revisions มีใน schema และ migration แล้ว แต่ขั้นตอนบันทึกปัจจุบันยังไม่เพิ่ม revision และไม่มี UNIQUE บน (document_id, version_label)
+- docs_qa_document_revisions เก็บทั้งร่างและฉบับอนุมัติ มี UNIQUE บน (document_id, open_slot) และ (document_id, revision_number) ไม่มี UNIQUE บน version_label เพื่อรักษาประวัติเดิม
 - docs_work_documents ไม่มี document_code, criterion_id, status, current_version, file_mime_type หรือ updated_at และไม่มี UNIQUE จำกัดจำนวนไฟล์ต่อประเภทในบริบทเดียวกัน
 
 ## 5. Enums
@@ -355,6 +439,8 @@ erDiagram
 | docs_qa_document_status | DRAFT, PUBLISHED, ARCHIVED | docs_qa_documents.status |
 | docs_wfme_standard_type | NONE, BASIC, QUALITY_DEV | docs_qa_criteria.wfme_standard_type |
 | docs_document_workflow | QA, CM, TCH, ASM, ADM | docs_sub_departments.document_workflow (NULL ได้) |
+| docs_revision_status | DRAFT, PENDING, APPROVED | docs_qa_document_revisions.status |
+| docs_submission_status | PENDING, RETURNED, APPROVED | docs_qa_submissions.status |
 
 Enums ใช้เป็นชนิด ENUM ของคอลัมน์ MySQL ไม่ใช่ตารางแยก ส่วน role.name และ docs_work_documents.document_type เป็นข้อความ ไม่ใช่ enum ของฐานข้อมูล
 
@@ -373,8 +459,11 @@ Enums ใช้เป็นชนิด ENUM ของคอลัมน์ MySQ
 | `docs_programs` | code | (framework_id) |
 | `docs_document_levels` | code | — |
 | `docs_qa_criteria` | (framework_id, code) | (parent_id); (framework_id, level_depth, sort_order) |
-| `docs_qa_documents` | document_code | (department_id, sub_department_id); (program_id); (document_level_id); (criterion_id); (status) |
-| `docs_qa_document_revisions` | — | (document_id) |
+| `docs_qa_documents` | document_code | (department_id, sub_department_id); (program_id); (document_level_id); (criterion_id); (status); (deleted_at) |
+| `docs_qa_document_revisions` | (document_id, open_slot); (document_id, revision_number) | (document_id); (status, submitted_at) |
+| `docs_qa_review_events` | — | (revision_id, created_at); (submission_id) |
+| `docs_qa_submissions` | (revision_id, round_no) | (status, submitted_at) |
+| `audit_logs` | — | (created_at, id); (actor_id, created_at); (entity_type, entity_id); (action, outcome) |
 | `docs_academic_years` | year | — |
 | `docs_semesters` | code | — |
 | `docs_study_years` | year | — |
@@ -393,6 +482,9 @@ MySQL อาจสร้าง index เพิ่มเพื่อรองร�
 | --- | --- | --- |
 | users → role, departments, positions | SET NULL | CASCADE |
 | docs_qa_document_revisions → docs_qa_documents | CASCADE | CASCADE |
+| docs_qa_review_events → docs_qa_document_revisions | CASCADE | CASCADE |
+| docs_qa_submissions → docs_qa_document_revisions | CASCADE | CASCADE |
+| docs_qa_review_events → docs_qa_submissions | SET NULL | CASCADE |
 | Foreign Key อื่นทั้งหมดในกลุ่ม docs_* | RESTRICT | CASCADE |
 
 ระดับ application ปฏิเสธการลบสังกัด/ตำแหน่งที่มีผู้ใช้อ้างอิง แม้ DB รองรับ SET NULL การลบแถวด้วย SQL ไม่ลบไฟล์บน filesystem และ CASCADE ของ revisions มีผลเฉพาะแถวข้อมูล
@@ -406,8 +498,8 @@ MySQL อาจสร้าง index เพิ่มเพื่อรองร�
 1. หน่วยงาน หลักสูตร ระดับเอกสาร และเกณฑ์ต้องเปิดใช้งาน
 2. หน่วยงานที่มีงานย่อยต้องระบุงานที่อยู่ภายใต้หน่วยงานนั้น; หน่วยงานที่ไม่มีงานย่อยต้องไม่ส่งงานย่อย
 3. ค้นเกณฑ์ด้วย (program.framework_id, criterion.code) และต้องมี is_selectable = true ค่านี้เป็นตัวกำหนดสิทธิ์เลือก ไม่ใช่ DB constraint ว่าต้องเป็น leaf node
-4. ลำดับจากฟอร์มเป็นเลข 0–999 เติมศูนย์ให้ครบ 3 หลัก ผู้ใช้กำหนดเอง ยังไม่มีการรันเลขอัตโนมัติ แม้ sequence_no รองรับ VARCHAR(10) และ NULL
-5. สร้างรายการเป็น DRAFT เวอร์ชัน 1.0 แนบไฟล์หรือไม่ก็ได้ รหัสซ้ำถูกปฏิเสธด้วย UNIQUE
+4. ลำดับเอกสารกำหนดอัตโนมัติเมื่อบันทึก เริ่ม 001 โดยเพิ่มจากค่าสูงสุดในหน่วยงาน งาน หลักสูตร ระดับ และเกณฑ์เดียวกัน เติมศูนย์ครบ 3 หลักและหยุดที่ 999 ล็อกหน่วยงานใน transaction แบบ Read Committed เพื่อป้องกันคำขอพร้อมกัน ไม่รับลำดับจากฟอร์ม แม้ sequence_no รองรับ VARCHAR(10) และ NULL
+5. สร้างรายการเป็น DRAFT ฉบับ 000 พร้อม revision ฉบับร่าง แนบไฟล์หรือไม่ก็ได้ แต่ต้องมีไฟล์ก่อนส่งตรวจ รหัสหลักซ้ำถูกปฏิเสธด้วย UNIQUE
 
 ```text
 มีงานย่อย:  <หน่วยงาน>-<งานย่อย>-<หลักสูตร>-<ระดับเอกสาร>-<เกณฑ์>-<ลำดับ>
@@ -447,7 +539,7 @@ created_by, updated_by, uploaded_by เป็น VARCHAR ไม่มี FK ไ�
 
 ปัจจุบัน login ตรวจ username, is_active, password_hash และโหลดบทบาท ส่วน last_login_at, failed_login_attempts, locked_until, email_verified_at ยังไม่มีขั้นตอนใช้งานใน lib/auth.ts ขณะที่ must_change_password ถูกตั้งค่าจากการจัดการผู้ใช้ แต่ยังไม่มี flow บังคับเปลี่ยนรหัสผ่าน
 
-สถานะ PUBLISHED/ARCHIVED และข้อมูล revision มี schema รองรับ แต่ยังไม่มีขั้นตอนอนุมัติ เผยแพร่ จัดเก็บ หรือจัดการประวัติเวอร์ชันผ่านหน้าจอปัจจุบัน
+ขั้นตอนฉบับเอกสารใช้ DRAFT → PENDING → APPROVED แยกจากสถานะทะเบียน เมื่ออนุมัติจะเพิ่ม approved_revision_no และปรับทะเบียนเป็น PUBLISHED โดยใช้ชื่อและไฟล์ของฉบับที่อนุมัติ ร่างสำหรับฉบับถัดไปไม่เปลี่ยนฉบับที่ใช้งานอยู่ ตรวจสิทธิ์จากบัญชีปัจจุบันและป้องกันอนุมัติฉบับที่ตนจัดทำหรือส่งตรวจ รายละเอียดอยู่ที่ [คู่มืออนุมัติ](./quality-document-approval.md) ยังไม่มีปุ่มจัดเก็บทะเบียนเป็น ARCHIVED
 
 ## 8. ประวัติ migration
 
@@ -463,6 +555,9 @@ created_by, updated_by, uploaded_by เป็น VARCHAR ไม่มี FK ไ�
 | 20261021020000_add_department_work_documents | เพิ่ม 7 ตารางข้อมูลการศึกษาและเอกสารตามงาน |
 | 20261021030000_add_document_workflow | เพิ่ม document_workflow และตั้งค่าให้ข้อมูลงานเดิมตาม code/name |
 | 20261021040000_add_unique_usernames | เปลี่ยน username เป็น VARCHAR(150) และเพิ่ม UNIQUE |
+| 20261024000000_add_quality_document_approval | เพิ่มฉบับร่าง/รออนุมัติ ตัวนับฉบับ ประวัติการตรวจ และนำเข้าทะเบียนเดิม |
+| 20261024010000_add_audit_and_document_deletion | เพิ่มข้อมูลการลบออกจากรายการ และ audit_logs พร้อมนำเข้าประวัติการตรวจเดิม |
+| 20261024020000_preserve_quality_submission_drafts | เก็บสำเนาร่างทุกครั้งที่ส่งตรวจ เชื่อมผลตรวจและนำเข้าเฉพาะรอบที่ยังรออนุมัติ |
 
 ตรวจสถานะและ deploy migrations จาก project root หลังตั้ง DATABASE_URL:
 
@@ -472,7 +567,7 @@ node node_modules/prisma/build/index.js migrate deploy
 node node_modules/prisma/build/index.js generate
 ```
 
-Deploy เปลี่ยนฐานข้อมูลตาม migration ที่ยังไม่ถูกใช้ ส่วน generate สร้าง client ตาม schema โดยไม่เปลี่ยนฐานข้อมูล การอัปเดตเอกสารครั้งนี้ไม่ได้รัน migration หรือ seed
+Deploy เปลี่ยนฐานข้อมูลตาม migration ที่ยังไม่ถูกใช้ ส่วน generate สร้าง client ตาม schema โดยไม่เปลี่ยนฐานข้อมูล
 
 ## 9. ข้อมูลเริ่มต้น
 

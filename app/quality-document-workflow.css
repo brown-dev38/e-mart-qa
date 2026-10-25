@@ -1,0 +1,31 @@
+.qa-workflow-modal { padding-bottom: 16px; }
+.qa-workflow-modal .ant-modal-close { top: 12px; right: 12px; }
+.qa-workflow-heading { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 20px 14px; border-bottom: 1px solid var(--color-line); }
+.qa-version-select { width: 220px; max-width: 100%; }
+.qa-workflow-section { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.qa-workflow-tabs { display: flex; flex: 1; min-height: 0; }
+.qa-workflow-tabs > .ant-tabs-nav { flex-shrink: 0; margin: 0; padding-inline: 20px; }
+.qa-workflow-tabs > .ant-tabs-body-holder { flex: 1; min-height: 0; overflow: hidden; }
+.qa-workflow-tabs > .ant-tabs-body-holder > .ant-tabs-body,
+.qa-workflow-tabs .ant-tabs-content { height: 100%; min-height: 0; overflow: hidden; }
+.qa-workflow-pane { flex: 1; min-height: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 18px 20px; }
+.qa-editor-columns { display: grid; gap: 20px; }
+.qa-field-label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500; }
+.qa-editor-file { padding: 14px; border: 1px solid var(--color-line); border-radius: 8px; }
+.qa-feedback-desktop { display: none; }
+.qa-workflow-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--color-line); background: white; }
+.qa-action-hint { flex: 1; min-width: 100px; font-size: 12px; }
+.qa-snapshot-heading { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 20px; border-bottom: 1px solid var(--color-line); }
+.qa-file-card, .qa-history-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px; border: 1px solid var(--color-line); border-radius: 8px; }
+@media (min-width: 760px) { .qa-editor-columns { grid-template-columns: minmax(0, 1fr) 310px; } .qa-feedback-desktop { display: block; } .qa-feedback-mobile { display: none; } }
+@media (max-width: 639px) {
+  .qa-workflow-heading, .qa-workflow-pane, .qa-snapshot-heading { padding: 12px; }
+  .qa-version-select { width: 100%; }
+  .qa-workflow-tabs > .ant-tabs-nav { padding-inline: 12px; }
+  .qa-workflow-actions { gap: 6px; padding: 10px 12px; }
+  .qa-action-hint { flex-basis: 100%; }
+  .qa-workflow-actions .ant-btn { flex: 1; padding-inline: 8px; font-size: 12px; }
+  .qa-workflow-actions > .ant-btn:first-of-type { flex: 0 0 auto; }
+  .qa-workflow-actions > .ant-btn-primary { flex: 1.4; }
+  .qa-workflow-actions .ant-btn-icon { display: none; }
+}

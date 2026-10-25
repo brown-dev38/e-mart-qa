@@ -1,33 +1,26 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { prisma } from "./prisma";
+import { storeQualityFile, removeQualityFile } from "./quality-document-files";
+import { qualityActor } from "./quality-document-workflow";
+import { writeAudit } from "./audit-log";
 import type { DocumentSaveResult } from "@/types/quality-document";
-
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = new Set([".pdf", ".doc", ".docx", ".xls", ".xlsx"]);
-const UPLOAD_DIR = path.join(
-  process.cwd(),
-  "public",
-  "uploads",
-  "qa-documents",
-);
 
 function field(formData: FormData, name: string): string {
   const value = formData.get(name);
   return typeof value === "string" ? value.trim() : "";
 }
 
+class SequenceExhausted extends Error {}
+
 export async function saveQualityDocument(
   formData: FormData,
   userId: string,
 ): Promise<DocumentSaveResult> {
+  await qualityActor(userId);
   const departmentCode = field(formData, "department").toUpperCase();
   const jobCode = field(formData, "job").toUpperCase();
   const programCode = field(formData, "program").toUpperCase();
   const levelCode = field(formData, "level").toUpperCase();
   const criterionCode = field(formData, "criterion").toUpperCase();
-  const sequence = field(formData, "sequence");
   const title = field(formData, "title");
   const description = field(formData, "description");
 
@@ -43,10 +36,6 @@ export async function saveQualityDocument(
   if (description.length > 2000) {
     return { ok: false, error: "คำอธิบายต้องไม่เกิน 2,000 ตัวอักษร" };
   }
-  if (!/^\d{1,3}$/.test(sequence)) {
-    return { ok: false, error: "ลำดับเอกสารต้องเป็นตัวเลข 0–999" };
-  }
-
   const [department, program, level] = await Promise.all([
     prisma.docs_departments.findUnique({ where: { code: departmentCode } }),
     prisma.docs_programs.findUnique({ where: { code: programCode } }),
@@ -101,77 +90,93 @@ export async function saveQualityDocument(
     };
   }
 
-  const documentCode = [
+  const codePrefix = [
     department.code,
     ...(subDepartment ? [subDepartment.code] : []),
     program.code,
     level.code,
     criterion.code,
-    sequence.padStart(3, "0"),
   ].join("-");
 
-  let storedFilePath: string | null = null;
-  let fileData: {
-    file_path: string;
-    file_name: string;
-    file_mime_type: string | null;
-    file_size_bytes: bigint;
-  } | null = null;
-
-  const fileEntry = formData.get("file");
-  if (fileEntry instanceof File && fileEntry.size > 0) {
-    if (fileEntry.size > MAX_FILE_BYTES) {
-      return { ok: false, error: "ไฟล์ต้องมีขนาดไม่เกิน 20 MB" };
-    }
-    const extension = path.extname(fileEntry.name).toLowerCase();
-    if (!ALLOWED_EXTENSIONS.has(extension)) {
-      return { ok: false, error: "รองรับเฉพาะไฟล์ PDF, Word และ Excel" };
-    }
-
-    await mkdir(UPLOAD_DIR, { recursive: true });
-    const storageName = `${randomUUID()}${extension}`;
-    storedFilePath = path.join(UPLOAD_DIR, storageName);
-    await writeFile(storedFilePath, Buffer.from(await fileEntry.arrayBuffer()));
-
-    fileData = {
-      file_path: `/uploads/qa-documents/${storageName}`,
-      file_name: fileEntry.name.slice(0, 255),
-      file_mime_type: fileEntry.type ? fileEntry.type.slice(0, 100) : null,
-      file_size_bytes: BigInt(fileEntry.size),
-    };
-  }
-
+  let fileData: Awaited<ReturnType<typeof storeQualityFile>> = null;
+  let saved: { documentCode: string; documentId: string };
   try {
-    await prisma.docs_qa_documents.create({
-      data: {
-        document_code: documentCode,
-        sequence_no: sequence.padStart(3, "0"),
-        title,
-        description: description || null,
-        department_id: department.id,
-        sub_department_id: subDepartment?.id ?? null,
-        program_id: program.id,
-        document_level_id: level.id,
-        criterion_id: criterion.id,
-        current_version: "1.0",
-        status: "DRAFT",
-        created_by: userId,
-        ...fileData,
-      },
-    });
+    fileData = await storeQualityFile(formData.get("file"));
+    saved = await prisma.$transaction(async tx => {
+      // Lock a stable parent even when this group has no documents yet.
+      // Read Committed ensures a waiting request sees the previous allocation.
+      await tx.$queryRaw`SELECT id FROM docs_departments WHERE id = ${department.id} FOR UPDATE`;
+      const actor = await qualityActor(userId, tx);
+      const existing = await tx.docs_qa_documents.findMany({
+        where: { OR: [
+          {
+            department_id: department.id,
+            sub_department_id: subDepartment?.id ?? null,
+            program_id: program.id,
+            document_level_id: level.id,
+            criterion_id: criterion.id,
+          },
+          { document_code: { startsWith: `${codePrefix}-` } },
+        ] },
+        select: {
+          sequence_no: true, document_code: true, department_id: true,
+          sub_department_id: true, program_id: true, document_level_id: true, criterion_id: true,
+        },
+      });
+      let highest = 0;
+      for (const row of existing) {
+        const suffix = row.document_code.startsWith(`${codePrefix}-`)
+          ? row.document_code.slice(codePrefix.length + 1) : "";
+        const sameGroup = row.department_id === department.id &&
+          row.sub_department_id === (subDepartment?.id ?? null) &&
+          row.program_id === program.id && row.document_level_id === level.id && row.criterion_id === criterion.id;
+        for (const value of [sameGroup ? row.sequence_no : null, suffix]) {
+          if (value && /^\d{1,10}$/.test(value)) highest = Math.max(highest, Number(value));
+        }
+      }
+      if (highest >= 999) throw new SequenceExhausted("ลำดับเอกสารในกลุ่มนี้ครบ 999 แล้ว กรุณาติดต่อผู้ดูแลระบบ");
+      const sequence = String(highest + 1).padStart(3, "0");
+      const allocatedCode = `${codePrefix}-${sequence}`;
+      const created = await tx.docs_qa_documents.create({
+        data: {
+          document_code: allocatedCode,
+          sequence_no: sequence,
+          title,
+          description: description || null,
+          department_id: department.id,
+          sub_department_id: subDepartment?.id ?? null,
+          program_id: program.id,
+          document_level_id: level.id,
+          criterion_id: criterion.id,
+          current_version: "000",
+          status: "DRAFT",
+          created_by: userId,
+          revisions: { create: {
+            version_label: "000", status: "DRAFT", open_slot: 1,
+            title, description: description || null, uploaded_by: userId,
+            ...fileData,
+            events: { create: { action: "CREATE", actor_id: actor.id, actor_name: actor.name } },
+          } },
+        },
+      });
+      await writeAudit(tx, actor, {
+        action: "CREATE", entityType: "QUALITY_DOCUMENT", entityId: String(created.id),
+        entityLabel: allocatedCode, summary: `เพิ่มเอกสารคุณภาพ: ${title}`, details: { title, version: "000" },
+      });
+      return { documentCode: allocatedCode, documentId: String(created.id) };
+    }, { isolationLevel: "ReadCommitted" });
   } catch (error) {
-    if (storedFilePath) {
-      await unlink(storedFilePath).catch(() => undefined);
-    }
+    if (fileData) await removeQualityFile(fileData.file_path);
+    if (error instanceof SequenceExhausted) return { ok: false, error: error.message };
     if ((error as { code?: string }).code === "P2002") {
       return {
         ok: false,
-        error: `รหัสเอกสาร ${documentCode} มีอยู่ในระบบแล้ว กรุณาเปลี่ยนลำดับเอกสาร`,
+        error: "มีการออกรหัสเอกสารพร้อมกัน กรุณาลองบันทึกอีกครั้ง ระบบจะกำหนดลำดับใหม่ให้",
       };
     }
-    console.error(error);
+    if (error instanceof Error && /ไฟล์|รองรับเฉพาะ/.test(error.message)) return { ok: false, error: error.message };
     return { ok: false, error: "บันทึกเอกสารไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
   }
 
-  return { ok: true, documentCode };
+  return { ok: true, ...saved };
 }

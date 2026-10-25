@@ -3,6 +3,17 @@ import { getServerSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcrypt";
 import { prisma } from "@/lib/prisma";
+import { writeAudit } from "./audit-log";
+
+async function authHistory(id: string, name: string, action: "LOGIN" | "LOGOUT", failed = false) {
+  try {
+    await writeAudit(prisma, { id, name }, {
+      action, entityType: "AUTH", entityId: id || null, entityLabel: name,
+      summary: failed ? "เข้าสู่ระบบไม่สำเร็จ" : action === "LOGIN" ? "เข้าสู่ระบบ" : "ออกจากระบบ",
+      outcome: failed ? "FAILED" : "SUCCESS",
+    });
+  } catch { console.error("Unable to record authentication audit event"); }
+}
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -24,10 +35,16 @@ export const authOptions: NextAuthOptions = {
           include: { role: true },
         });
 
-        if (!user || !user.is_active || !user.password_hash) return null;
+        if (!user || !user.is_active || !user.password_hash) {
+          await authHistory(user ? String(user.id) : "", username, "LOGIN", true);
+          return null;
+        }
 
         const valid = await bcrypt.compare(password, user.password_hash);
-        if (!valid) return null;
+        if (!valid) {
+          await authHistory(String(user.id), user.username, "LOGIN", true);
+          return null;
+        }
 
         return {
           id: String(user.id),
@@ -37,6 +54,12 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+  events: {
+    async signIn({ user }) { await authHistory(user.id, user.name || "ไม่ทราบบัญชี", "LOGIN"); },
+    async signOut(message) {
+      if ("token" in message && message.token) await authHistory(String(message.token.uid || ""), message.token.name || "ไม่ทราบบัญชี", "LOGOUT");
+    },
+  },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {

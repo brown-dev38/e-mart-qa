@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 /public/uploads
+/storage/qa-documents
 
 # debug
 npm-debug.log*

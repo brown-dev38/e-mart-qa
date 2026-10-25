@@ -1,11 +1,13 @@
 import { prisma } from "./prisma";
+import { revisionFileUrl } from "./quality-document-files";
 import type { QualityDocumentListItem, QualityDocumentScope } from "@/types/quality-document";
 
-export async function listQualityDocuments(scope: QualityDocumentScope = {}): Promise<
+export async function listQualityDocuments(scope: QualityDocumentScope = {}, actor?: { id: string; admin: boolean }): Promise<
   QualityDocumentListItem[]
 > {
   const rows = await prisma.docs_qa_documents.findMany({
     where: {
+      deleted_at: null,
       ...(scope.programCode ? { program: { code: scope.programCode } } : {}),
       ...(scope.departmentCode ? { department: { code: scope.departmentCode } } : {}),
       ...(scope.subDepartmentCode === null
@@ -21,6 +23,12 @@ export async function listQualityDocuments(scope: QualityDocumentScope = {}): Pr
       title: true,
       status: true,
       current_version: true,
+      created_by: true,
+      revisions: { where: { open_slot: 1 }, select: {
+        id: true, status: true, title: true, file_path: true, file_name: true, file_size_bytes: true,
+        submissions: { orderBy: { round_no: "desc" }, take: 1, select: { status: true } },
+        events: { where: { action: "RETURN" }, take: 1, select: { id: true } },
+      } },
       created_at: true,
       effective_date: true,
       file_path: true,
@@ -40,12 +48,18 @@ export async function listQualityDocuments(scope: QualityDocumentScope = {}): Pr
     },
   });
 
-  return rows.map((row) => ({
+  return rows.filter(row => row.status !== "DRAFT" || actor?.admin || row.created_by === actor?.id).map((row) => {
+    const open = row.revisions[0];
+    const showDraft = row.status === "DRAFT";
+    const visibleOpen = actor?.admin || row.created_by === actor?.id;
+    return ({
     id: row.id.toString(),
     document_code: row.document_code,
-    title: row.title,
+    title: showDraft && open ? open.title : row.title,
     status: row.status,
     current_version: row.current_version,
+    open_revision_status: visibleOpen ? open?.status ?? null : null,
+    open_revision_returned: !!(visibleOpen && open?.status === "DRAFT" && (open.submissions[0] ? open.submissions[0].status === "RETURNED" : open.events.length)),
     created_at: row.created_at.toISOString(),
     effective_date: row.effective_date
       ? row.effective_date.toISOString().slice(0, 10)
@@ -61,8 +75,8 @@ export async function listQualityDocuments(scope: QualityDocumentScope = {}): Pr
     level_name: row.document_level.name_th,
     criterion_code: row.criterion.code,
     criterion_title: row.criterion.title_th,
-    file_path: row.file_path,
-    file_name: row.file_name,
-    file_size_bytes: row.file_size_bytes?.toString() ?? null,
-  }));
+    file_path: showDraft ? (open?.file_path ? revisionFileUrl(open.id) : null) : row.file_path,
+    file_name: showDraft ? open?.file_name ?? null : row.file_name,
+    file_size_bytes: (showDraft ? open?.file_size_bytes : row.file_size_bytes)?.toString() ?? null,
+  }); });
 }

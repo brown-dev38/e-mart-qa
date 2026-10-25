@@ -120,6 +120,28 @@
   min-width: 0;
 }
 
+.qa-document-workspace {
+  padding-block: 20px;
+}
+
+.qa-document-workspace .qa-page-heading {
+  margin-bottom: 18px;
+}
+
+.qa-document-workspace .qa-workspace-eyebrow,
+.qa-document-workspace .qa-page-heading > .qa-role-tag {
+  display: none;
+}
+
+.qa-document-workspace .qa-page-heading h1 {
+  font-size: 23px;
+}
+
+.qa-document-workspace .qa-page-heading p {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
 .qa-mobile-menu-button.ant-btn {
   display: inline-flex;
   flex-shrink: 0;

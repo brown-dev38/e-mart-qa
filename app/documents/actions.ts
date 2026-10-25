@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { listQualityDocuments } from "@/lib/quality-document-query";
 import { saveQualityDocument } from "@/lib/quality-document-save";
+import { qualityActor } from "@/lib/quality-document-workflow";
 import type {
   DocumentSaveResult,
   QualityDocumentListResult,
@@ -17,7 +18,11 @@ export async function saveQualityDocumentAction(
     return { ok: false, error: "กรุณาเข้าสู่ระบบก่อนบันทึกเอกสาร" };
   }
 
-  return saveQualityDocument(formData, session.user.id);
+  try {
+    return await saveQualityDocument(formData, session.user.id);
+  } catch {
+    return { ok: false, error: "บันทึกเอกสารไม่สำเร็จ กรุณาตรวจสอบบัญชีแล้วลองใหม่" };
+  }
 }
 
 export async function listQualityDocumentsAction(
@@ -39,7 +44,8 @@ export async function listQualityDocumentsAction(
   }
 
   try {
-    return { ok: true, documents: await listQualityDocuments(scope) };
+    const actor = await qualityActor(session.user.id);
+    return { ok: true, documents: await listQualityDocuments(scope, actor) };
   } catch (error) {
     console.error(error);
     return {

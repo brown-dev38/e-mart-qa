@@ -21,6 +21,9 @@ import {
   ChevronDown,
   FilePlus2,
   Files,
+  FileCheck2,
+  Trash2,
+  History,
   FolderOpen,
   LayoutDashboard,
   Menu as MenuIcon,
@@ -33,6 +36,10 @@ import { readDepartmentSelection } from "@/lib/department-documents";
 import type { DepartmentDocumentCatalog, DepartmentSelection } from "@/types/department-documents";
 import QualityDocumentForm from "./quality-document-form";
 import QualityDocumentList from "./quality-document-list";
+import QualityDocumentApprovals from "./quality-document-approvals";
+import QualityDocumentReviewInbox from "./quality-document-review-inbox";
+import QualityDocumentDeletion from "./admin/quality-document-deletion";
+import AuditLog from "./admin/audit-log";
 import AdminSettings from "./admin/admin-settings";
 import SettingsOverview from "./admin/settings-overview";
 import { settingsPages, settingsGroups, settingsHomePage, type SettingsSection } from "@/lib/settings-navigation";
@@ -47,6 +54,38 @@ import { clearDocumentDraft } from "@/lib/quality-document-draft";
 import "./dashboard.css";
 
 const documentPages = [
+  {
+    id: "documents-review",
+    title: "ติดตามการตรวจและแก้ไข",
+    description: "ติดตามผลตรวจ อ่านข้อเสนอแนะ และแก้ไขเอกสารเพื่อส่งตรวจซ้ำ",
+    icon: History,
+    path: ["การจัดเอกสารคุณภาพ", "ติดตามการตรวจและแก้ไข"],
+    parents: ["documents"],
+  },
+  {
+    id: "documents-delete",
+    title: "ลบเอกสารคุณภาพ",
+    description: "นำเอกสารออกจากรายการใช้งาน พร้อมเก็บเหตุผลและประวัติสำหรับตรวจสอบ",
+    icon: Trash2,
+    path: ["การจัดเอกสารคุณภาพ", "ลบเอกสารคุณภาพ"],
+    parents: ["documents"],
+  },
+  {
+    id: "audit-log",
+    title: "Audit log · ประวัติการทำงาน",
+    description: "ตรวจสอบผู้ดำเนินการ รายการที่เปลี่ยนแปลง เวลา และผลการทำงานของระบบ",
+    icon: History,
+    path: ["ตรวจสอบระบบ", "Audit log"],
+    parents: [],
+  },
+  {
+    id: "documents-approvals",
+    title: "ตรวจสอบอนุมัติ",
+    description: "ตรวจสอบเอกสาร ส่งกลับแก้ไข และอนุมัติฉบับที่มีผลใช้งาน",
+    icon: FileCheck2,
+    path: ["การจัดเอกสารคุณภาพ", "ตรวจสอบอนุมัติ"],
+    parents: ["documents"],
+  },
   {
     id: "documents-create",
     title: "เพิ่มเอกสารคุณภาพ",
@@ -132,6 +171,9 @@ function readNavigation(
           page.id === migratedSection &&
           (canManage ||
             (!page.id.startsWith("settings-") &&
+              page.id !== "documents-approvals" &&
+              page.id !== "documents-delete" &&
+              page.id !== "audit-log" &&
               !page.id.startsWith("directory-"))),
       );
     const selectedPage = allPages.find((page) => page.id === migratedSection);
@@ -190,6 +232,20 @@ function buildNavigationItems(
               label: "เอกสารคุณภาพทั้งหมด",
             },
             {
+              key: "documents-review",
+              icon: <History size={16} aria-hidden="true" />,
+              label: "ติดตามการตรวจและแก้ไข",
+            },
+            ...(canManage ? [{
+              key: "documents-approvals",
+              icon: <FileCheck2 size={16} aria-hidden="true" />,
+              label: "ตรวจสอบอนุมัติ",
+            }, {
+              key: "documents-delete",
+              icon: <Trash2 size={16} aria-hidden="true" />,
+              label: "ลบเอกสารคุณภาพ",
+            }] : []),
+            {
               key: "documents-departments",
               icon: <Building2 size={16} aria-hidden="true" />,
               label: "แยกตามหน่วยงาน",
@@ -206,6 +262,9 @@ function buildNavigationItems(
   ];
 
   if (canManage) {
+    items.push({ type: "group", label: "ตรวจสอบระบบ", children: [{
+      key: "audit-log", icon: <History size={18} aria-hidden="true" />, label: "Audit log · ประวัติการทำงาน",
+    }] });
     items.push({
       type: "group",
       label: "จัดการผู้ใช้งาน",
@@ -564,11 +623,11 @@ export default function Dashboard({
         <main
           id="dashboard-content"
           tabIndex={-1}
-          className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col px-5 py-7 outline-none sm:px-8 sm:py-9 lg:px-10"
+          className={`mx-auto flex w-full max-w-[1440px] flex-1 flex-col px-5 py-7 outline-none sm:px-8 sm:py-9 lg:px-10 ${section.startsWith("documents-") ? "qa-document-workspace" : ""}`}
         >
-          <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
+          <div className="qa-page-heading mb-7 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="mb-2 text-[10px] font-semibold tracking-[0.16em] text-accent">
+              <p className="qa-workspace-eyebrow mb-2 text-[10px] font-semibold tracking-[0.16em] text-accent">
                 E-SMART QA WORKSPACE
               </p>
               <h1
@@ -608,6 +667,10 @@ export default function Dashboard({
           )}
 
           {section === "documents-all" && <QualityDocumentList />}
+          {section === "documents-review" && <QualityDocumentReviewInbox />}
+          {canManage && section === "documents-approvals" && <QualityDocumentApprovals />}
+          {canManage && section === "documents-delete" && <QualityDocumentDeletion />}
+          {canManage && section === "audit-log" && <AuditLog />}
 
           {canManage && settings && section === "settings-overview" && (
             <SettingsOverview data={settings} onNavigate={navigate} />
@@ -633,6 +696,10 @@ export default function Dashboard({
             section !== "documents-departments" &&
             section !== "documents-create" &&
             section !== "documents-all" &&
+            section !== "documents-review" &&
+            section !== "documents-approvals" &&
+            section !== "documents-delete" &&
+            section !== "audit-log" &&
             !section.startsWith("settings-") &&
             !section.startsWith("directory-") && (
               <Card className="qa-pending-card mb-9">

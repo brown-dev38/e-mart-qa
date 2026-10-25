@@ -6,13 +6,11 @@ export type DocumentFormValues = {
   curriculum?: string;
   level?: string;
   criterion?: string;
-  sequence: string;
   title: string;
   description: string;
 };
 
 export const EMPTY_DOCUMENT: DocumentFormValues = {
-  sequence: "000",
   title: "",
   description: "",
 };
@@ -173,7 +171,7 @@ export function isValidCriterion(
   return catalog.criterionCodes[framework]?.includes(code) ?? false;
 }
 
-export function buildDocumentCode(
+export function buildDocumentPrefix(
   values: DocumentFormValues,
   catalog: DocumentCatalog,
 ): string | null {
@@ -185,13 +183,11 @@ export function buildDocumentCode(
   );
   const level = catalog.levels.find((item) => item.value === values.level);
   const criterion = values.criterion?.trim().toUpperCase() ?? "";
-  const sequence = values.sequence?.trim() ?? "";
 
   if (
     !department ||
     !program ||
     !level ||
-    !/^\d{1,3}$/.test(sequence) ||
     !isValidCriterion(catalog, program.framework, criterion)
   ) {
     return null;
@@ -208,7 +204,6 @@ export function buildDocumentCode(
     program.value,
     level.value,
     criterion,
-    sequence.padStart(3, "0"),
   ].join("-");
 }
 
@@ -263,11 +258,6 @@ export function readDocumentDraft(
           program && isValidCriterion(catalog, program.framework, criterion)
             ? criterion
             : undefined,
-        sequence:
-          typeof values.sequence === "string" &&
-          /^\d{1,3}$/.test(values.sequence)
-            ? values.sequence.padStart(3, "0")
-            : "000",
         title:
           typeof values.title === "string" ? values.title.slice(0, 200) : "",
         description:
