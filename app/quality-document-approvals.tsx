@@ -33,7 +33,7 @@ export default function QualityDocumentApprovals() {
     <p className="my-3 text-xs text-muted">รออนุมัติ {filtered.length} รายการ · ผู้จัดทำหรือผู้ส่งตรวจอนุมัติฉบับของตนเองไม่ได้</p>
     <div className="qa-desktop-documents"><Table<ApprovalQueueItem> rowKey="id" dataSource={filtered} loading={pending} size="small" scroll={{ x: 720 }} pagination={pagination} locale={{ emptyText: <Empty description="ไม่มีเอกสารรออนุมัติ" /> }} columns={[
       { title: "เอกสาร", key: "document", render: (_, doc) => <div><button className="qa-document-title" onClick={() => setSelected(doc.documentId)}>{doc.title}</button><p className="mt-1 break-all font-mono text-xs text-muted">{doc.documentCode}</p></div> },
-      { title: "ฉบับเสนอ / ใช้งาน", key: "version", width: 155, render: (_, doc) => <div><Tag color="gold">เสนอ {doc.targetVersion}</Tag><p className="mt-1 text-xs text-muted">{doc.currentVersion === "000" ? "ยังไม่มีฉบับใช้งาน" : `ใช้งาน ${doc.currentVersion}`}</p></div> },
+      { title: "ฉบับเสนอ / ใช้งาน", key: "version", width: 155, render: (_, doc) => <div><Tag color="gold">เสนอ {doc.targetVersion}</Tag><p className="mt-1 text-xs text-muted">{doc.currentVersion === null ? "ยังไม่มีฉบับใช้งาน" : `ใช้งาน ${doc.currentVersion}`}</p></div> },
       { title: "ผู้ส่งตรวจ", key: "sender", width: 180, render: (_, doc) => <div><p>{doc.submittedBy}</p><p className="mt-1 text-xs text-muted">{date(doc.submittedAt)}</p></div> },
       { title: "ดำเนินการ", key: "review", width: 150, render: (_, doc) => action(doc) },
     ]} /></div>

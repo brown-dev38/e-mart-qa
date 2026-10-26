@@ -52,6 +52,14 @@ export function submissionFileUrl(id: bigint | string) {
   return `/api/quality-documents/submissions/${id}/file`;
 }
 
+export function revisionReviewFileUrl(id: bigint | string) {
+  return `${revisionFileUrl(id)}?purpose=review`;
+}
+
+export function submissionReviewFileUrl(id: bigint | string) {
+  return `${submissionFileUrl(id)}?purpose=review`;
+}
+
 export async function snapshotQualityFile(source: string) {
   let buffer: Buffer;
   try { buffer = await readFile(qualityFilePath(source)); }

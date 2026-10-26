@@ -8,7 +8,7 @@ import QualityDocumentWorkflow from "./quality-document-workflow";
 import type { QualityReviewItem, QualityReviewPhase } from "@/types/quality-document";
 import "./quality-document-list.css";
 
-const phases = { RETURNED: { label: "ส่งกลับให้แก้ไข", color: "orange" }, DRAFT: { label: "ฉบับร่าง", color: "blue" }, PENDING: { label: "รอตรวจอนุมัติ", color: "gold" }, APPROVED: { label: "อนุมัติแล้ว", color: "green" } };
+const phases = { RETURNED: { label: "ส่งกลับให้แก้ไข", color: "orange" }, DRAFT: { label: "ฉบับร่าง", color: "blue" }, PENDING: { label: "รอตรวจอนุมัติ", color: "gold" }, APPROVED: { label: "อนุมัติแล้ว", color: "green" }, SUPERSEDED: { label: "ถูกแทนที่", color: "default" }, WITHDRAWN: { label: "ยกเลิกใช้", color: "red" } };
 const date = (value: string) => new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(new Date(value));
 
 export default function QualityDocumentReviewInbox() {

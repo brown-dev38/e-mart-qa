@@ -8,11 +8,12 @@ import QualityDocumentWorkflow from "./quality-document-workflow";
 import type { QualityDocumentListItem, QualityDocumentStatus, QualityDocumentScope } from "@/types/quality-document";
 import "./quality-document-list.css";
 
-const STATUS_META = { DRAFT: { label: "ฉบับร่าง", color: "default" }, PUBLISHED: { label: "มีผลใช้งาน", color: "green" }, ARCHIVED: { label: "เก็บถาวร", color: "orange" } };
+const STATUS_META = { DRAFT: { label: "ฉบับร่าง", color: "default" }, PUBLISHED: { label: "มีผลใช้งาน", color: "green" }, ARCHIVED: { label: "ยกเลิกใช้", color: "orange" } };
 const STATUS_FILTERS = [...Object.entries(STATUS_META).map(([value, meta]) => ({ value, label: meta.label })), { value: "RETURNED", label: "ส่งกลับให้แก้ไข" }, { value: "PENDING", label: "รออนุมัติ" }];
 type StatusFilter = QualityDocumentStatus | "RETURNED" | "PENDING";
 function statusTag(doc: QualityDocumentListItem) {
   let { label, color } = STATUS_META[doc.status];
+  if (doc.scheduled_version) { label = doc.current_version === null ? `ฉบับ ${doc.scheduled_version} อนุมัติแล้ว · รอมีผล` : `ใช้งาน ${doc.current_version} · ฉบับ ${doc.scheduled_version} รอมีผล`; color = "blue"; }
   if (doc.status === "DRAFT" && doc.open_revision_status === "PENDING") { label = "รออนุมัติ"; color = "gold"; }
   if (doc.status === "PUBLISHED" && doc.open_revision_status) label = doc.open_revision_status === "DRAFT" ? "ใช้งาน · มีร่างใหม่" : "ใช้งาน · ฉบับใหม่รออนุมัติ";
   if (doc.open_revision_returned) { label = doc.status === "PUBLISHED" ? "ใช้งาน · ฉบับใหม่รอแก้ไข" : "ส่งกลับให้แก้ไข"; color = "orange"; }
@@ -53,15 +54,15 @@ export default function QualityDocumentList({ scope }: { scope?: QualityDocument
     return { departments: list(departments), programs: list(programs), levels: list(levels) };
   }, [documents]);
   const filtered = useMemo(() => documents.filter(doc =>
-    `${doc.document_code}-${doc.current_version} ${doc.title} ${doc.criterion_code}`.toLowerCase().includes(search.trim().toLowerCase()) &&
+    `${doc.document_code} ${doc.current_version ?? ""} ${doc.title} ${doc.criterion_code ?? ""}`.toLowerCase().includes(search.trim().toLowerCase()) &&
     (!department || doc.department_code === department) && (!program || doc.program_code === program) && (!level || doc.level_code === level) &&
     (!status || (status === "RETURNED" ? doc.open_revision_returned : status === "PENDING" ? doc.open_revision_status === "PENDING" : status === "DRAFT" ? doc.status === "DRAFT" && doc.open_revision_status !== "PENDING" && !doc.open_revision_returned : doc.status === status))), [documents, search, department, program, level, status]);
   const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / 5)));
   const activeFilters = [department, program, level, status].filter(Boolean).length;
-  const openFile = (doc: QualityDocumentListItem) => doc.file_path && <Button href={doc.file_path} target="_blank" rel="noreferrer" aria-label={`เปิดไฟล์ ${doc.title}`} icon={<Download size={15} aria-hidden="true" />}>ไฟล์</Button>;
+  const openFile = (doc: QualityDocumentListItem) => doc.status === "PUBLISHED" && doc.file_path && <Button href={doc.file_path} target="_blank" rel="noreferrer" aria-label={`ดาวน์โหลดฉบับอนุมัติ ${doc.title}`} icon={<Download size={15} aria-hidden="true" />}>ดาวน์โหลด</Button>;
   const columns: NonNullable<TableProps<QualityDocumentListItem>["columns"]> = [
-    { title: "เอกสาร", key: "document", render: (_, doc) => <div><button className="qa-document-title" onClick={() => setSelected(doc.id)}>{doc.title}</button><p className="mt-1 break-all font-mono text-xs text-muted">{doc.document_code}-{doc.current_version}</p><p className="mt-1 text-xs text-muted">{doc.department_code}{doc.sub_department_code ? ` / ${doc.sub_department_code}` : ""} · {doc.program_code}</p></div> },
-    { title: "ประเภท / เกณฑ์", key: "category", width: 125, render: (_, doc) => <div><p className="text-sm">{doc.level_code}</p><p className="text-xs text-muted">{doc.criterion_code}</p></div> },
+    { title: "เอกสาร", key: "document", render: (_, doc) => <div><button className="qa-document-title" onClick={() => setSelected(doc.id)}>{doc.title}</button><p className="mt-1 break-all font-mono text-xs text-muted">รหัสเอกสาร: {doc.document_code}</p><p className="mt-1 text-xs text-muted">{doc.current_version !== null ? `ฉบับ: ${doc.current_version}` : "ยังไม่มีฉบับมีผลใช้"}</p><p className="mt-1 text-xs text-muted">{doc.department_code}{doc.sub_department_code ? ` / ${doc.sub_department_code}` : ""} · {doc.program_code}</p></div> },
+    { title: "ประเภท / เกณฑ์", key: "category", width: 125, render: (_, doc) => <div><p className="text-sm">{doc.level_code}</p><p className="text-xs text-muted">{doc.criterion_code ?? "—"}</p></div> },
     { title: "สถานะ", key: "status", width: 160, render: (_, doc) => statusTag(doc) },
     { title: "เปิดเอกสาร", key: "actions", width: 200, render: (_, doc) => <div className="flex gap-2">{openFile(doc)}<Button onClick={() => setSelected(doc.id)}>รายละเอียด</Button></div> },
   ];
@@ -84,12 +85,12 @@ export default function QualityDocumentList({ scope }: { scope?: QualityDocument
     <div className="qa-desktop-documents"><Table<QualityDocumentListItem> rowKey="id" dataSource={filtered} columns={columns} loading={pending} size="small" scroll={{ x: 760 }} pagination={pagination}
       expandable={{ expandedRowRender: doc => <Descriptions size="small" column={2} items={[
         { key: "department", label: "หน่วยงาน", children: doc.department_name }, { key: "program", label: "หลักสูตร", children: doc.program_name },
-        { key: "criterion", label: "เกณฑ์", children: `${doc.criterion_code} ${doc.criterion_title}` }, { key: "created", label: "สร้างเมื่อ", children: new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(new Date(doc.created_at)) },
+        { key: "criterion", label: "เกณฑ์", children: doc.criterion_code ? `${doc.criterion_code} ${doc.criterion_title ?? ""}` : "—" }, { key: "created", label: "สร้างเมื่อ", children: new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(new Date(doc.created_at)) },
       ]} /> }} locale={{ emptyText: <Empty description={loaded ? "ไม่พบเอกสารตามเงื่อนไข" : "กำลังโหลดเอกสาร…"} /> }} /></div>
     <div className="qa-mobile-documents" aria-busy={pending}>
       {filtered.slice((currentPage - 1) * 5, currentPage * 5).map(doc => <article className="qa-mobile-document" key={doc.id}>
         <button className="qa-document-title" onClick={() => setSelected(doc.id)}>{doc.title}</button>
-        <p className="mt-1 break-all font-mono text-xs text-muted">{doc.document_code}-{doc.current_version}</p>
+        <p className="mt-1 break-all font-mono text-xs text-muted">รหัสเอกสาร: {doc.document_code}</p><p className="mt-1 text-xs text-muted">{doc.current_version !== null ? `ฉบับ: ${doc.current_version}` : "ยังไม่มีฉบับมีผลใช้"}</p>
         <div className="my-3 flex flex-wrap items-center gap-2">{statusTag(doc)}<span className="text-xs text-muted">{doc.department_code} · {doc.program_code}</span></div>
         <div className="flex gap-2">{openFile(doc)}<Button onClick={() => setSelected(doc.id)}>รายละเอียด / แก้ไข</Button></div>
       </article>)}

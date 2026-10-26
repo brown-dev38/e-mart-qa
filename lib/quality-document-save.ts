@@ -3,6 +3,7 @@ import { storeQualityFile, removeQualityFile } from "./quality-document-files";
 import { qualityActor } from "./quality-document-workflow";
 import { writeAudit } from "./audit-log";
 import type { DocumentSaveResult } from "@/types/quality-document";
+import { requiresDocumentCriterion } from "./quality-document-catalog";
 
 function field(formData: FormData, name: string): string {
   const value = formData.get(name);
@@ -20,11 +21,12 @@ export async function saveQualityDocument(
   const jobCode = field(formData, "job").toUpperCase();
   const programCode = field(formData, "program").toUpperCase();
   const levelCode = field(formData, "level").toUpperCase();
-  const criterionCode = field(formData, "criterion").toUpperCase();
+  const needsCriterion = requiresDocumentCriterion(levelCode);
+  const criterionCode = needsCriterion ? field(formData, "criterion").toUpperCase() : "";
   const title = field(formData, "title");
   const description = field(formData, "description");
 
-  if (!departmentCode || !programCode || !levelCode || !criterionCode) {
+  if (!departmentCode || !programCode || !levelCode || (needsCriterion && !criterionCode)) {
     return { ok: false, error: "ข้อมูลสำหรับออกรหัสเอกสารไม่ครบถ้วน" };
   }
   if (!title) {
@@ -72,18 +74,18 @@ export async function saveQualityDocument(
     return { ok: false, error: "หน่วยงานที่เลือกไม่มีงานย่อย" };
   }
 
-  const criterion = await prisma.docs_qa_criteria.findUnique({
+  const criterion = needsCriterion ? await prisma.docs_qa_criteria.findUnique({
     where: {
       framework_id_code: {
         framework_id: program.framework_id,
         code: criterionCode,
       },
     },
-  });
-  if (!criterion || !criterion.is_active) {
+  }) : null;
+  if (needsCriterion && (!criterion || !criterion.is_active)) {
     return { ok: false, error: "ไม่พบเกณฑ์ที่เลือก หรือถูกปิดใช้งานแล้ว" };
   }
-  if (!criterion.is_selectable) {
+  if (criterion && !criterion.is_selectable) {
     return {
       ok: false,
       error: "เกณฑ์ที่เลือกเป็นเพียงหัวข้อกลุ่ม ไม่สามารถผูกเอกสารได้",
@@ -95,7 +97,7 @@ export async function saveQualityDocument(
     ...(subDepartment ? [subDepartment.code] : []),
     program.code,
     level.code,
-    criterion.code,
+    ...(criterion ? [criterion.code] : []),
   ].join("-");
 
   let fileData: Awaited<ReturnType<typeof storeQualityFile>> = null;
@@ -114,7 +116,7 @@ export async function saveQualityDocument(
             sub_department_id: subDepartment?.id ?? null,
             program_id: program.id,
             document_level_id: level.id,
-            criterion_id: criterion.id,
+            criterion_id: criterion?.id ?? null,
           },
           { document_code: { startsWith: `${codePrefix}-` } },
         ] },
@@ -129,7 +131,7 @@ export async function saveQualityDocument(
           ? row.document_code.slice(codePrefix.length + 1) : "";
         const sameGroup = row.department_id === department.id &&
           row.sub_department_id === (subDepartment?.id ?? null) &&
-          row.program_id === program.id && row.document_level_id === level.id && row.criterion_id === criterion.id;
+          row.program_id === program.id && row.document_level_id === level.id && row.criterion_id === (criterion?.id ?? null);
         for (const value of [sameGroup ? row.sequence_no : null, suffix]) {
           if (value && /^\d{1,10}$/.test(value)) highest = Math.max(highest, Number(value));
         }
@@ -147,12 +149,12 @@ export async function saveQualityDocument(
           sub_department_id: subDepartment?.id ?? null,
           program_id: program.id,
           document_level_id: level.id,
-          criterion_id: criterion.id,
-          current_version: "000",
+          criterion_id: criterion?.id ?? null,
+          current_version: null,
           status: "DRAFT",
           created_by: userId,
           revisions: { create: {
-            version_label: "000", status: "DRAFT", open_slot: 1,
+            version_label: "DRAFT", status: "DRAFT", open_slot: 1,
             title, description: description || null, uploaded_by: userId,
             ...fileData,
             events: { create: { action: "CREATE", actor_id: actor.id, actor_name: actor.name } },
@@ -175,6 +177,7 @@ export async function saveQualityDocument(
       };
     }
     if (error instanceof Error && /ไฟล์|รองรับเฉพาะ/.test(error.message)) return { ok: false, error: error.message };
+    console.error("[quality-document-save] Unexpected save failure", error);
     return { ok: false, error: "บันทึกเอกสารไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
   }
 

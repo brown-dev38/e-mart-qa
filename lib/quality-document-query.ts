@@ -1,10 +1,12 @@
 import { prisma } from "./prisma";
 import { revisionFileUrl } from "./quality-document-files";
 import type { QualityDocumentListItem, QualityDocumentScope } from "@/types/quality-document";
+import { refreshQualityPublications } from "./quality-document-publication";
 
 export async function listQualityDocuments(scope: QualityDocumentScope = {}, actor?: { id: string; admin: boolean }): Promise<
   QualityDocumentListItem[]
 > {
+  await refreshQualityPublications();
   const rows = await prisma.docs_qa_documents.findMany({
     where: {
       deleted_at: null,
@@ -24,19 +26,18 @@ export async function listQualityDocuments(scope: QualityDocumentScope = {}, act
       status: true,
       current_version: true,
       created_by: true,
-      revisions: { where: { open_slot: 1 }, select: {
-        id: true, status: true, title: true, file_path: true, file_name: true, file_size_bytes: true,
+      revisions: { where: { OR: [{ open_slot: 1 }, { status: "APPROVED" }] }, orderBy: { id: "desc" }, select: {
+        id: true, status: true, version_label: true, title: true, file_path: true, file_name: true, file_size_bytes: true,
         submissions: { orderBy: { round_no: "desc" }, take: 1, select: { status: true } },
         events: { where: { action: "RETURN" }, take: 1, select: { id: true } },
       } },
       created_at: true,
       effective_date: true,
-      file_path: true,
       file_name: true,
       file_size_bytes: true,
       department: { select: { code: true, name_th: true } },
       sub_department: { select: { code: true, name_th: true } },
-      program: { select: { code: true, name_th: true } },
+      program: { select: { code: true, name_th: true, framework: { select: { code: true } } } },
       document_level: { select: { code: true, name_th: true } },
       criterion: {
         select: {
@@ -49,7 +50,8 @@ export async function listQualityDocuments(scope: QualityDocumentScope = {}, act
   });
 
   return rows.filter(row => row.status !== "DRAFT" || actor?.admin || row.created_by === actor?.id).map((row) => {
-    const open = row.revisions[0];
+    const open = row.revisions.find(revision => revision.status === "DRAFT" || revision.status === "PENDING");
+    const approved = row.revisions.find(revision => revision.status === "APPROVED" && revision.version_label === row.current_version);
     const showDraft = row.status === "DRAFT";
     const visibleOpen = actor?.admin || row.created_by === actor?.id;
     return ({
@@ -58,6 +60,7 @@ export async function listQualityDocuments(scope: QualityDocumentScope = {}, act
     title: showDraft && open ? open.title : row.title,
     status: row.status,
     current_version: row.current_version,
+    scheduled_version: row.revisions.find(revision => revision.status === "APPROVED" && revision.version_label !== row.current_version)?.version_label ?? null,
     open_revision_status: visibleOpen ? open?.status ?? null : null,
     open_revision_returned: !!(visibleOpen && open?.status === "DRAFT" && (open.submissions[0] ? open.submissions[0].status === "RETURNED" : open.events.length)),
     created_at: row.created_at.toISOString(),
@@ -70,12 +73,12 @@ export async function listQualityDocuments(scope: QualityDocumentScope = {}, act
     sub_department_name: row.sub_department?.name_th ?? null,
     program_code: row.program.code,
     program_name: row.program.name_th,
-    framework_code: row.criterion.framework.code,
+    framework_code: row.criterion?.framework.code ?? row.program.framework.code,
     level_code: row.document_level.code,
     level_name: row.document_level.name_th,
-    criterion_code: row.criterion.code,
-    criterion_title: row.criterion.title_th,
-    file_path: showDraft ? (open?.file_path ? revisionFileUrl(open.id) : null) : row.file_path,
+    criterion_code: row.criterion?.code ?? null,
+    criterion_title: row.criterion?.title_th ?? null,
+    file_path: row.status === "PUBLISHED" && approved?.file_path ? revisionFileUrl(approved.id) : null,
     file_name: showDraft ? open?.file_name ?? null : row.file_name,
     file_size_bytes: (showDraft ? open?.file_size_bytes : row.file_size_bytes)?.toString() ?? null,
   }); });

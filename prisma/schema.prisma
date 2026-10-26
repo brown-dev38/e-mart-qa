@@ -194,9 +194,11 @@ model docs_qa_documents {
   sub_department_id    Int?                    @db.UnsignedInt
   program_id           Int                     @db.UnsignedInt
   document_level_id    Int                     @db.UnsignedInt
-  criterion_id         Int                     @db.UnsignedInt
-  current_version      String                  @default("000") @db.VarChar(20)
-  approved_revision_no Int                     @default(0) @db.UnsignedSmallInt
+  criterion_id         Int?                    @db.UnsignedInt
+  current_version      String?                 @db.VarChar(20)
+  approved_revision_no Int?                    @db.UnsignedSmallInt
+  storage_location     String?                 @db.VarChar(1000)
+  registry_version     Int                     @default(0) @db.UnsignedInt
   effective_date       DateTime?               @db.Date
   review_date          DateTime?               @db.Date
   file_path            String?                 @db.VarChar(1000)
@@ -216,8 +218,9 @@ model docs_qa_documents {
   sub_department docs_sub_departments?        @relation(fields: [sub_department_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   program        docs_programs                @relation(fields: [program_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   document_level docs_document_levels         @relation(fields: [document_level_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  criterion      docs_qa_criteria             @relation(fields: [criterion_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  criterion      docs_qa_criteria?            @relation(fields: [criterion_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   revisions      docs_qa_document_revisions[]
+  registry_changes docs_qa_registry_changes[]
 
   @@index([department_id, sub_department_id])
   @@index([program_id])
@@ -251,6 +254,7 @@ model docs_qa_document_revisions {
   document_id     BigInt               @db.UnsignedBigInt
   version_label   String               @db.VarChar(20)
   change_note     String?              @db.Text
+  change_reason   String?              @db.Text
   file_path       String?              @db.VarChar(1000)
   file_name       String?              @db.VarChar(255)
   file_mime_type  String?              @db.VarChar(100)
@@ -267,6 +271,17 @@ model docs_qa_document_revisions {
   submitted_at    DateTime?            @db.Timestamp(0)
   approved_by     String?              @db.VarChar(100)
   approved_at     DateTime?            @db.Timestamp(0)
+  approved_name   String?              @db.VarChar(150)
+  reviewed_by     String?              @db.VarChar(100)
+  reviewed_name   String?              @db.VarChar(150)
+  reviewed_at     DateTime?            @db.Timestamp(0)
+  effective_date  DateTime?            @db.Date
+  superseded_at   DateTime?            @db.Timestamp(0)
+  superseded_by_version String?        @db.VarChar(20)
+  withdrawn_by    String?              @db.VarChar(100)
+  withdrawn_name  String?              @db.VarChar(150)
+  withdrawn_at    DateTime?            @db.Timestamp(0)
+  withdrawal_reason String?            @db.Text
   updated_at      DateTime             @default(now()) @updatedAt @db.Timestamp(3)
 
   document    docs_qa_documents       @relation(fields: [document_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
@@ -283,6 +298,22 @@ enum docs_revision_status {
   DRAFT
   PENDING
   APPROVED
+  SUPERSEDED
+  WITHDRAWN
+}
+
+model docs_qa_registry_changes {
+  id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  document_id     BigInt   @db.UnsignedBigInt
+  previous_location String? @db.VarChar(1000)
+  storage_location String?  @db.VarChar(1000)
+  reason          String   @db.VarChar(2000)
+  actor_id        String   @db.VarChar(100)
+  actor_name      String   @db.VarChar(150)
+  created_at      DateTime @default(now()) @db.Timestamp(3)
+  document docs_qa_documents @relation(fields: [document_id], references: [id], onDelete: Cascade)
+
+  @@index([document_id, created_at])
 }
 
 model docs_qa_review_events {
@@ -309,6 +340,11 @@ model docs_qa_submissions {
   title              String                     @db.VarChar(500)
   description        String?                    @db.Text
   change_note        String?                    @db.Text
+  change_reason      String?                    @db.Text
+  reviewer_id        String?                    @db.VarChar(100)
+  reviewer_name      String?                    @db.VarChar(150)
+  reviewer_at        DateTime?                  @db.Timestamp(0)
+  effective_date     DateTime?                  @db.Date
   file_path          String                     @db.VarChar(1000)
   file_name          String                     @db.VarChar(255)
   file_mime_type     String?                    @db.VarChar(100)

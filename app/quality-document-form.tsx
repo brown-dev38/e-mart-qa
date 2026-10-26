@@ -4,7 +4,7 @@ import { startTransition, useEffect, useState, useTransition } from "react";
 import { Alert, Button, Card, Descriptions, Form, Input, Modal, Popover, Select, Upload, type UploadFile } from "antd";
 import { Copy, Eye, FileText, Info, Paperclip, RotateCcw, Save, Trash2, UploadCloud } from "lucide-react";
 import toast from "react-hot-toast";
-import { buildDocumentPrefix, EMPTY_DOCUMENT, isValidCriterion, readDocumentDraft, type DocumentCatalog, type DocumentFormValues } from "@/lib/quality-document-catalog";
+import { buildDocumentPrefix, EMPTY_DOCUMENT, isValidCriterion, readDocumentDraft, requiresDocumentCriterion, type DocumentCatalog, type DocumentFormValues } from "@/lib/quality-document-catalog";
 import { documentDraftKey } from "@/lib/quality-document-draft";
 import { saveQualityDocumentAction } from "./documents/actions";
 import QualityDocumentWorkflow from "./quality-document-workflow";
@@ -26,8 +26,9 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
   const jobOptions = values.department ? catalog.subDepartments[values.department] ?? [] : [];
   const curriculum = catalog.programs.find(item => item.value === values.curriculum);
   const framework = curriculum?.framework;
+  const needsCriterion = requiresDocumentCriterion(values.level);
   const prefix = buildDocumentPrefix(values, catalog);
-  const code = prefix ? `${prefix}-XXX-000` : null;
+  const code = prefix ? `${prefix}-XXX` : null;
   const isManagement = department ? !department.hasSubDepartment : false;
 
   useEffect(() => {
@@ -60,14 +61,14 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
   function saveDocument() {
     const current = form.getFieldsValue(true) as DocumentFormValues;
     const payload = new FormData();
-    for (const [key, value] of Object.entries({ department: current.department, job: current.job, program: current.curriculum, level: current.level, criterion: current.criterion, title: current.title, description: current.description })) payload.set(key, value ?? "");
+    for (const [key, value] of Object.entries({ department: current.department, job: current.job, program: current.curriculum, level: current.level, criterion: requiresDocumentCriterion(current.level) ? current.criterion : undefined, title: current.title, description: current.description })) payload.set(key, value ?? "");
     const file = files[0]?.originFileObj as File | undefined;
     if (file) payload.set("file", file);
     startSaving(async () => {
       try {
         const result = await saveQualityDocumentAction(payload);
         if (!result.ok) { toast.error(result.error); return; }
-        setSavedCode(`${result.documentCode}-000`);
+        setSavedCode(result.documentCode);
         setSavedId(result.documentId);
         toast.success("บันทึกเอกสารแล้ว"); setReviewOpen(false); resetForm();
       } catch { toast.error("เชื่อมต่อไม่สำเร็จ กรุณาลองบันทึกอีกครั้ง"); }
@@ -82,7 +83,7 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
     ...(!isManagement ? [{ key: "job", label: "ชื่องาน", children: jobOptions.find(item => item.value === values.job)?.label || "—" }] : []),
     { key: "program", label: "หลักสูตร", children: curriculum?.label || "—" },
     { key: "level", label: "ระดับเอกสาร", children: catalog.levels.find(item => item.value === values.level)?.label || "—" },
-    { key: "criterion", label: "เกณฑ์", children: values.criterion || "—" },
+    ...(needsCriterion ? [{ key: "criterion", label: "เกณฑ์", children: values.criterion || "—" }] : []),
   ];
 
   return <Form<DocumentFormValues> form={form} name="quality-document" layout="vertical" initialValues={EMPTY_DOCUMENT} disabled={saving}
@@ -109,20 +110,21 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
                 onChange={() => form.setFieldValue("criterion", undefined)} />
             </Form.Item>
             <Form.Item name="level" label="ระดับเอกสาร" rules={[{ required: true, message: "กรุณาเลือกระดับเอกสาร" }]}>
-              <Select placeholder="เลือกระดับเอกสาร" options={catalog.levels} />
+              <Select placeholder="เลือกระดับเอกสาร" options={catalog.levels}
+                onChange={level => { if (!requiresDocumentCriterion(level)) form.setFieldValue("criterion", undefined); }} />
             </Form.Item>
           </div>
-          <Form.Item name="criterion" label={<>เกณฑ์ประเมิน{framework && <span className="ml-2 text-xs text-muted">{framework}</span>}</>}
+          {needsCriterion ? <Form.Item name="criterion" label={<>เกณฑ์ประเมิน{framework && <span className="ml-2 text-xs text-muted">{framework}</span>}</>}
             rules={[{ required: true, message: "กรุณาเลือกเกณฑ์ประเมิน" }, { validator: (_, value: string | undefined) => !value || !framework || isValidCriterion(catalog, framework, value) ? Promise.resolve() : Promise.reject(new Error("กรุณาเลือกเกณฑ์ที่ตรงกับหลักสูตรจากรายการ")) }]}>
             <Select disabled={saving || !framework} placeholder={framework ? `ค้นหารหัสหรือชื่อเกณฑ์ ${framework}` : "เลือกหลักสูตรก่อน"}
               options={framework ? catalog.criteria[framework] ?? [] : []} showSearch={{ optionFilterProp: "label" }} optionLabelProp="label" allowClear
               virtual={false} listHeight={256} classNames={{ popup: { root: "qa-criterion-dropdown" } }} notFoundContent="ไม่พบเกณฑ์ที่ค้นหา" />
-          </Form.Item>
+          </Form.Item> : <p className="mb-6 text-sm text-muted">ระเบียบปฏิบัติ (SP) ไม่ต้องเลือกเกณฑ์ประเมิน</p>}
           <div className="qa-form-code-row">
             <div className="min-w-0 flex-1"><span className="text-xs text-muted">รหัสเอกสาร · ลำดับอัตโนมัติ</span>
               <output id="document-code-preview" className="mt-1 block break-all font-mono text-xs" aria-live="polite">{code || "เลือกหมวดหมู่เพื่อดูตัวอย่างรหัส"}</output>
             </div>
-            <Popover trigger="click" title="รหัสเอกสาร" content={<div className="max-w-64 text-sm leading-6">ระบบกำหนดลำดับเริ่ม 001 เมื่อบันทึก<br />XXX เป็นตัวอย่างลำดับที่ยังไม่ได้กำหนด<br />ท้าย 000 คือฉบับร่าง และเพิ่มเมื่ออนุมัติ</div>}>
+            <Popover trigger="click" title="รหัสเอกสาร" content={<div className="max-w-64 text-sm leading-6">ระบบกำหนดลำดับเริ่ม 001 เมื่อบันทึก<br />XXX เป็นตัวอย่างลำดับที่ยังไม่ได้กำหนด<br />รหัสเอกสารและเลขฉบับแยกกัน<br />ฉบับอนุมัติครั้งแรกคือ 000</div>}>
               <Button type="text" size="small" aria-label="วิธีออกรหัสเอกสาร" icon={<Info size={16} aria-hidden="true" />} />
             </Popover>
           </div>
@@ -168,7 +170,7 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
       <Descriptions column={1} size="small" items={summary} />
       {values.description && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-muted">{values.description}</p>}
       {files[0] && <p className="mt-3 flex items-center gap-2 break-all text-sm"><Paperclip size={15} aria-hidden="true" />{files[0].name}</p>}
-      <p className="mt-4 text-xs text-muted">บันทึกเป็นฉบับร่าง 000 จากนั้นเปิดเอกสารเพื่อส่งตรวจอนุมัติ</p>
+      <p className="mt-4 text-xs text-muted">บันทึกเป็นฉบับร่าง จากนั้นเปิดเอกสารเพื่อส่งตรวจอนุมัติ โดยอนุมัติครั้งแรกเป็นฉบับ 000</p>
     </Modal>
     {openedDocument && <QualityDocumentWorkflow documentId={openedDocument} onClose={() => setOpenedDocument(null)} onChanged={() => undefined} />}
   </Form>;

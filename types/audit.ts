@@ -2,6 +2,7 @@ export const AUDIT_ACTIONS = {
   CREATE: "เพิ่มข้อมูล", UPDATE: "แก้ไขข้อมูล", DELETE: "ลบข้อมูล",
   REVISION_CREATE: "สร้างฉบับร่าง", EDIT: "แก้ไขฉบับร่าง", SUBMIT: "ส่งตรวจ",
   RETURN: "ส่งกลับแก้ไข", APPROVE: "อนุมัติ", LOGIN: "เข้าสู่ระบบ", LOGOUT: "ออกจากระบบ",
+  REVIEW: "ทบทวนผ่าน", EFFECTIVE: "มีผลใช้บังคับ", REGISTRY_UPDATE: "แก้ทะเบียน", WITHDRAW: "ยกเลิกใช้",
 } as const;
 export const AUDIT_ENTITIES = {
   QUALITY_DOCUMENT: "เอกสารคุณภาพ", WORK_DOCUMENT: "เอกสารตามงาน", MASTER_DATA: "ข้อมูลพื้นฐาน",

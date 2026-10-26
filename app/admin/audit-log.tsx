@@ -13,6 +13,7 @@ const labels: Record<string, string> = {
   revisionId: "รหัสฉบับ", version: "ฉบับ", comment: "ความเห็น", reason: "เหตุผล", title: "ชื่อเอกสาร", status: "สถานะ",
   submissionId: "รหัสสำเนาส่งตรวจ", roundNo: "ครั้งที่ส่งตรวจ", targetVersion: "ฉบับที่เสนออนุมัติ",
   revisionCount: "จำนวนฉบับ", source: "แหล่งประวัติ", error: "รายละเอียดที่ไม่สำเร็จ", passwordChanged: "มีการตั้งรหัสผ่าน",
+  storageLocation: "ตำแหน่งจัดเก็บใหม่", previousLocation: "ตำแหน่งจัดเก็บเดิม", previousVersion: "ฉบับก่อนหน้า",
   id: "รหัสรายการ", code: "รหัส", name: "ชื่อ", name_th: "ชื่อภาษาไทย", username: "ชื่อบัญชี", is_active: "เปิดใช้งาน",
   name_en: "ชื่อภาษาอังกฤษ", title_th: "หัวข้อภาษาไทย", title_en: "หัวข้อภาษาอังกฤษ", description_th: "รายละเอียด", prefix_char: "คำนำหน้ารหัส", version_year: "รุ่นกรอบเกณฑ์", wfme_standard_type: "ประเภทมาตรฐาน WFME", section_number: "เลขข้อ", level_order: "ลำดับระดับเอกสาร",
   role_id: "รหัสบทบาท", department_id: "รหัสหน่วยงาน", position_id: "รหัสตำแหน่ง", program_id: "รหัสหลักสูตร", framework_id: "รหัสกรอบเกณฑ์",

@@ -48,6 +48,7 @@ test("quality draft saves metadata and complete uploads through HTTP up to 20 Mi
       const form = new FormData();
       form.set("revisionId", String(row.id)); form.set("lockVersion", String(row.lock_version));
       form.set("title", title); form.set("description", "HTTP upload regression test"); form.set("changeNote", "Updated through the real Server Action");
+      form.set("changeReason", "Verify complete uploads through the HTTP pipeline");
       if (file) form.set("file", file);
       const response = await fetch(base, {
         method: "POST", headers: { cookie, Origin: base.origin, "Next-Action": actionIds.get(action) },

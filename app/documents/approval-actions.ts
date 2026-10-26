@@ -3,6 +3,8 @@
 import { auth } from "@/lib/auth";
 import { createQualityRevision, qualityApprovalQueue, qualityReviewInbox, qualityWorkflowDetail, saveAndSubmitQualityRevision, transitionQualityRevision, updateQualityRevision, WorkflowError } from "@/lib/quality-document-workflow";
 import type { RevisionCommand } from "@/types/quality-document";
+import type { QualityRegistryCommand } from "@/types/quality-document";
+import { updateQualityRegistry, withdrawQualityDocument } from "@/lib/quality-document-registry";
 
 async function identity() {
   const session = await auth();
@@ -38,5 +40,15 @@ export async function saveAndSubmitQualityRevisionAction(form: FormData) {
 }
 export async function transitionQualityRevisionAction(command: RevisionCommand) {
   try { return await transitionQualityRevision(command, await identity()); }
+  catch (error) { return errorResult(error); }
+}
+
+export async function updateQualityRegistryAction(command: QualityRegistryCommand) {
+  try { return await updateQualityRegistry(command, await identity()); }
+  catch (error) { return errorResult(error); }
+}
+
+export async function withdrawQualityDocumentAction(command: { documentId: string; lockVersion: number; reason: string }) {
+  try { return await withdrawQualityDocument(command, await identity()); }
   catch (error) { return errorResult(error); }
 }

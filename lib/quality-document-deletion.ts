@@ -29,7 +29,7 @@ export async function listQualityDeletion(deleted: boolean, search: string, user
   if (typeof deleted !== "boolean" || typeof search !== "string" || search.length > 200) throw new ActionError("ตัวกรองไม่ถูกต้อง");
   return (await rows(deleted, search.trim())).map(row => ({
     id: String(row.id), code: row.document_code, title: row.revisions.find(r => r.open_slot === 1)?.title || row.title,
-    status: row.status, version: row.current_version, department: row.department.code,
+    status: row.status, version: row.current_version ?? "ฉบับร่าง", department: row.department.code,
     token: token(row), deletedAt: row.deleted_at?.toISOString() || null, deletedBy: row.deleted_by, reason: row.deletion_reason,
   }));
 }
