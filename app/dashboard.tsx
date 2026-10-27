@@ -1,18 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   Avatar,
   Badge,
   Breadcrumb,
   Button,
   Card,
-  Descriptions,
+  Divider,
   Drawer,
   Empty,
+  Form,
+  Input,
   Layout,
   Menu,
+  Select,
   Tag,
+  message,
   type MenuProps,
 } from "antd";
 import {
@@ -48,9 +52,11 @@ import UserAdmin, {
   type DirectorySection,
 } from "./admin/user-admin";
 import type { MasterData } from "@/types/master-data";
-import type { UserDirectoryData } from "@/types/user-directory";
+import type { UserDirectoryData, SaveResult } from "@/types/user-directory";
+import type { OwnProfileData } from "@/lib/user-profile";
 import type { DocumentCatalog } from "@/lib/quality-document-catalog";
 import { clearDocumentDraft } from "@/lib/quality-document-draft";
+import { saveOwnProfileAction } from "./profile-actions";
 import "./dashboard.css";
 
 const documentPages = [
@@ -124,6 +130,7 @@ const allPages = [...documentPages, settingsHomePage, ...settingsPages, ...direc
 
 type Section = "overview" | "account" | (typeof allPages)[number]["id"];
 type UserInfo = { name: string; role: string };
+type FormValues = Record<string, unknown>;
 
 type NavigationState = DepartmentSelection & {
   section: Section;
@@ -401,21 +408,144 @@ function Sidebar({
   );
 }
 
-function AccountDetails({ name, role }: UserInfo) {
+function AccountDetails({ profile }: { profile: OwnProfileData }) {
+  const [form] = Form.useForm();
+  const [pending, startTransition] = useTransition();
+  const [messageApi, contextHolder] = message.useMessage();
+
+  function handleFinish(values: FormValues) {
+    startTransition(async () => {
+      const result: SaveResult = await saveOwnProfileAction({
+        ...values,
+        id: profile.id,
+      });
+      if (!result.ok) {
+        messageApi.error(result.error);
+        return;
+      }
+      messageApi.success("บันทึกข้อมูลบัญชีแล้ว");
+    });
+  }
+
   return (
-    <Descriptions
-      size="small"
-      column={1}
-      layout="vertical"
-      items={[
-        {
-          key: "name",
-          label: "ชื่อผู้ใช้งาน",
-          children: <span className="break-words">{name}</span>,
-        },
-        { key: "role", label: "บทบาทในระบบ", children: role },
-      ]}
-    />
+    <>
+      {contextHolder}
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleFinish}
+        initialValues={{
+          username: profile.username,
+          email: profile.email ?? "",
+          citizen_id: profile.citizen_id ?? "",
+          firstname: profile.firstname ?? "",
+          lastname: profile.lastname ?? "",
+          department_id: profile.department_id ?? undefined,
+          position_id: profile.position_id ?? undefined,
+          password: "",
+          confirm_password: "",
+        }}
+        className="mt-1"
+      >
+        <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2 xl:grid-cols-3">
+          <Form.Item
+            name="username"
+            label="ชื่อผู้ใช้"
+            rules={[{ required: true, message: "กรุณากรอกชื่อผู้ใช้" }]}
+            help="ใช้ชื่อใหม่ตอนเข้าสู่ระบบครั้งถัดไป"
+          >
+            <Input maxLength={150} />
+          </Form.Item>
+          <Form.Item
+            name="email"
+            label="อีเมล"
+            rules={[
+              { type: "email", message: "รูปแบบอีเมลไม่ถูกต้อง" },
+            ]}
+          >
+            <Input maxLength={191} />
+          </Form.Item>
+          <Form.Item name="citizen_id" label="เลขบัตรประชาชน">
+            <Input maxLength={100} />
+          </Form.Item>
+          <Form.Item name="firstname" label="ชื่อ">
+            <Input maxLength={150} />
+          </Form.Item>
+          <Form.Item name="lastname" label="นามสกุล">
+            <Input maxLength={150} />
+          </Form.Item>
+          <Form.Item name="department_id" label="หน่วยงาน/สังกัด">
+            <Select
+              placeholder="ไม่ระบุ"
+              showSearch
+              optionFilterProp="label"
+              allowClear
+              options={profile.departments.map((item) => ({
+                value: item.id,
+                label: item.is_active ? item.name : `${item.name} (ปิดใช้งาน)`,
+                disabled: !item.is_active,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="position_id" label="ตำแหน่ง">
+            <Select
+              placeholder="ไม่ระบุ"
+              showSearch
+              optionFilterProp="label"
+              allowClear
+              options={profile.positions.map((item) => ({
+                value: item.id,
+                label: item.is_active ? item.name : `${item.name} (ปิดใช้งาน)`,
+                disabled: !item.is_active,
+              }))}
+            />
+          </Form.Item>
+        </div>
+
+        <Divider plain className="mt-2">รหัสผ่าน</Divider>
+        <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+          <Form.Item
+            name="password"
+            label="รหัสผ่านใหม่"
+            rules={[{ min: 8, message: "อย่างน้อย 8 ตัวอักษร" }]}
+            help="ปล่อยว่างหากไม่ต้องการเปลี่ยน"
+          >
+            <Input.Password
+              autoComplete="new-password"
+              placeholder="ปล่อยว่าง = คงรหัสเดิม"
+            />
+          </Form.Item>
+          <Form.Item
+            name="confirm_password"
+            label="ยืนยันรหัสผ่านใหม่"
+            dependencies={["password"]}
+            rules={[
+              ({ getFieldValue }) => ({
+                async validator(_rule, value) {
+                  const password = getFieldValue("password");
+                  if (!password && !value) return;
+                  if (!value) throw new Error("กรุณายืนยันรหัสผ่าน");
+                  if (password !== value) {
+                    throw new Error("รหัสผ่านและยืนยันรหัสผ่านไม่ตรงกัน");
+                  }
+                },
+              }),
+            ]}
+          >
+            <Input.Password
+              autoComplete="new-password"
+              placeholder="กรอกรหัสผ่านอีกครั้ง"
+            />
+          </Form.Item>
+        </div>
+
+        <div className="mt-2 flex justify-end">
+          <Button type="primary" htmlType="submit" loading={pending}>
+            บันทึกข้อมูล
+          </Button>
+        </div>
+      </Form>
+    </>
   );
 }
 
@@ -426,6 +556,7 @@ export default function Dashboard({
   canManage,
   settings,
   userDirectory,
+  ownProfile,
   documentCatalog,
   departmentDocumentCatalog,
 }: UserInfo & {
@@ -433,6 +564,7 @@ export default function Dashboard({
   canManage: boolean;
   settings: MasterData | null;
   userDirectory: UserDirectoryData | null;
+  ownProfile: OwnProfileData | null;
   documentCatalog: DocumentCatalog;
   departmentDocumentCatalog: DepartmentDocumentCatalog;
 }) {
@@ -637,10 +769,9 @@ export default function Dashboard({
               >
                 {title}
               </h1>
-              {section !== "overview" && (
+              {section !== "overview" && section !== "account" && (
                 <p className="mt-2 text-sm leading-relaxed text-muted">
-                  {selectedPage?.description ??
-                    "ข้อมูลบัญชีและบทบาทการใช้งานระบบของคุณ"}
+                  {selectedPage?.description ?? ""}
                 </p>
               )}
             </div>
@@ -732,26 +863,46 @@ export default function Dashboard({
               </Card>
             )}
 
-          {section === "account" && (
-            <Card className="mb-9 max-w-2xl">
-              <div className="mb-7 flex items-center gap-4">
-                <Avatar shape="square" size={56} className="qa-user-avatar">
-                  {Array.from(name)[0]?.toUpperCase()}
-                </Avatar>
-                <div className="min-w-0">
-                  <h2 className="break-words text-lg font-semibold">{name}</h2>
-                  <p className="mt-1 text-xs text-muted">
-                    บัญชีผู้ใช้งาน e-SMART QA
-                  </p>
+          {section === "account" &&
+            (ownProfile ? (
+              <Card className="mb-9 max-w-5xl">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-4">
+                    <Avatar shape="square" size={56} className="qa-user-avatar">
+                      {Array.from(name)[0]?.toUpperCase()}
+                    </Avatar>
+                    <div className="min-w-0">
+                      <h2 className="break-words text-lg font-semibold">{name}</h2>
+                      <p className="mt-1 text-xs text-muted">
+                        บัญชีผู้ใช้งาน e-SMART QA
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-sm">
+                    <span className="text-xs text-muted">บทบาท:</span>
+                    <Badge status="success" text={role} />
+                    <span className="ml-2 hidden text-xs text-muted sm:inline">สังกัด:</span>
+                    <span className="max-w-56 truncate">
+                      {[
+                        ownProfile.department_name,
+                        ownProfile.position_name,
+                      ].filter(Boolean).join(" · ") || (
+                        <span className="text-muted">—</span>
+                      )}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <AccountDetails name={name} role={role} />
-              <p className="mt-5 border-t border-line pt-5 text-xs leading-6 text-muted">
-                หากต้องการแก้ไขข้อมูลบัญชีหรือสิทธิ์การใช้งาน
-                กรุณาติดต่อผู้ดูแลระบบของคณะ
-              </p>
-            </Card>
-          )}
+                <p className="mt-4 border-t border-line pt-4 text-xs leading-6 text-muted">
+                  บทบาทและสังกัดกำหนดโดยผู้ดูแลระบบ ส่วนข้อมูลด้านล่างแก้ไขได้ด้วยตัวคุณเอง
+                  คลิก "บันทึกข้อมูล" เพื่อยืนยัน
+                </p>
+                <AccountDetails profile={ownProfile} />
+              </Card>
+            ) : (
+              <Card className="mb-9 max-w-5xl">
+                <Empty description="ไม่พบข้อมูลบัญชีของคุณ" />
+              </Card>
+            ))}
 
           <footer className="mt-auto flex flex-wrap justify-between gap-2 border-t border-line/80 pt-5 text-[10px] text-muted">
             <span>e-SMART QA · ระบบบริหารคุณภาพการศึกษา</span>

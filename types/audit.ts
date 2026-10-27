@@ -6,7 +6,7 @@ export const AUDIT_ACTIONS = {
 } as const;
 export const AUDIT_ENTITIES = {
   QUALITY_DOCUMENT: "เอกสารคุณภาพ", WORK_DOCUMENT: "เอกสารตามงาน", MASTER_DATA: "ข้อมูลพื้นฐาน",
-  USER: "บัญชีผู้ใช้", USER_DEPARTMENT: "สังกัดผู้ใช้", POSITION: "ตำแหน่ง", AUTH: "การเข้า–ออกระบบ",
+  USER: "บัญชีผู้ใช้", USER_DEPARTMENT: "สังกัดผู้ใช้", USER_PROFILE: "โปรไฟล์ผู้ใช้", POSITION: "ตำแหน่ง", AUTH: "การเข้า–ออกระบบ",
 } as const;
 export type AuditFilter = { search?: string; action?: string; entityType?: string; outcome?: string; from?: string; to?: string; page?: number };
 export type AuditItem = {

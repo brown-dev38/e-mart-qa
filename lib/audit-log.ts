@@ -18,7 +18,7 @@ export async function writeAudit(db: Prisma.TransactionClient, actor: Pick<Curre
 // Explicit allowlist: credentials, password hashes, citizen IDs and session tokens never enter the log.
 export function auditInput(input: Record<string, unknown>): Prisma.InputJsonObject {
   const safe: Record<string, string | number | boolean | null> = {};
-  for (const key of ["id", "code", "name", "name_th", "name_en", "title_th", "title_en", "description_th", "prefix_char", "version_year", "wfme_standard_type", "section_number", "username", "is_active", "role_id", "department_id", "position_id", "program_id", "framework_id", "year", "document_workflow", "parent_id", "course_id", "academic_year_id", "semester_id", "study_year_id", "level_depth", "sort_order", "is_selectable", "is_initial", "level_order"]) {
+  for (const key of ["id", "code", "name", "name_th", "name_en", "title_th", "title_en", "description_th", "prefix_char", "version_year", "wfme_standard_type", "section_number", "username", "email", "firstname", "lastname", "is_active", "role_id", "department_id", "position_id", "program_id", "framework_id", "year", "document_workflow", "parent_id", "course_id", "academic_year_id", "semester_id", "study_year_id", "level_depth", "sort_order", "is_selectable", "is_initial", "level_order"]) {
     const value = input[key];
     if (typeof value === "string") safe[key] = value.slice(0, 500);
     else if ((typeof value === "number" && Number.isFinite(value)) || typeof value === "boolean" || value === null) safe[key] = value;
