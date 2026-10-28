@@ -23,15 +23,25 @@ function token(row: Pick<Row, "id" | "updated_at" | "approved_revision_no" | "re
     row.revisions.map(r => [String(r.id), r.lock_version]),
   ])).digest("hex");
 }
+function deletionItem(row: Row): DeletionItem {
+  return {
+    id: String(row.id), code: row.document_code, title: row.revisions.find(r => r.open_slot === 1)?.title || row.title,
+    status: row.status, version: row.current_version ?? "ฉบับร่าง", department: row.department.code,
+    token: token(row), deletedAt: row.deleted_at?.toISOString() || null, deletedBy: row.deleted_by, reason: row.deletion_reason,
+  };
+}
+export async function qualityDeletionDetail(documentId: string, userId: string): Promise<DeletionItem> {
+  const actor = await currentActor(userId);
+  if (!actor.admin) throw new ActionError("เฉพาะผู้ดูแลระบบที่ลบเอกสารคุณภาพได้");
+  const row = await prisma.docs_qa_documents.findUnique({ where: { id: workflowId(documentId) }, include });
+  if (!row || row.deleted_at) throw new ActionError("ไม่พบเอกสาร หรือเอกสารถูกลบไปแล้ว");
+  return deletionItem(row);
+}
 export async function listQualityDeletion(deleted: boolean, search: string, userId: string): Promise<DeletionItem[]> {
   const actor = await currentActor(userId);
   if (!actor.admin) throw new ActionError("เฉพาะผู้ดูแลระบบที่ลบเอกสารคุณภาพได้");
   if (typeof deleted !== "boolean" || typeof search !== "string" || search.length > 200) throw new ActionError("ตัวกรองไม่ถูกต้อง");
-  return (await rows(deleted, search.trim())).map(row => ({
-    id: String(row.id), code: row.document_code, title: row.revisions.find(r => r.open_slot === 1)?.title || row.title,
-    status: row.status, version: row.current_version ?? "ฉบับร่าง", department: row.department.code,
-    token: token(row), deletedAt: row.deleted_at?.toISOString() || null, deletedBy: row.deleted_by, reason: row.deletion_reason,
-  }));
+  return (await rows(deleted, search.trim())).map(deletionItem);
 }
 export async function deleteQualityDocument(command: DeleteQualityCommand, userId: string): Promise<WorkflowResult> {
   try {

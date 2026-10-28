@@ -57,6 +57,7 @@ async function submitRevision(
 ) {
   if (!manages(actor, doc.created_by)) fail("คุณไม่มีสิทธิ์ส่งเอกสารนี้");
   if (revision.status !== "DRAFT" || revision.open_slot !== 1) fail("ส่งตรวจได้เฉพาะฉบับร่าง");
+  if (revision.auto_publish) fail("ฉบับนี้จะมีผลใช้อัตโนมัติตามวันที่กำหนด จึงไม่ต้องส่งตรวจ");
   if (!revision.file_path || !revision.file_name) fail("กรุณาแนบไฟล์ก่อนส่งตรวจ");
   if (!revision.change_note?.trim() || !revision.change_reason?.trim()) fail("กรุณาระบุสาระที่จัดทำหรือแก้ไขและเหตุผลก่อนส่งตรวจ");
   if (nextQualityRevision(doc.approved_revision_no) > 999) fail("เลขฉบับครบ 999 แล้ว");
@@ -264,8 +265,8 @@ export async function qualityWorkflowDetail(documentId: string, userId: string):
       description: (submitted?.description ?? r.description) || "", changeNote: (submitted?.change_note ?? r.change_note) || "",
       changeReason: (submitted?.change_reason ?? r.change_reason) || "",
       fileName: submitted?.file_name ?? r.file_name, hasFile: !!(submitted?.file_path || r.file_path),
-      fileUrl: r.status === "APPROVED" && doc.status === "PUBLISHED" && doc.current_version === r.version_label && r.file_path ? revisionFileUrl(r.id) : null,
-      reviewFileUrl: (r.status !== "APPROVED" || doc.current_version !== r.version_label || doc.status !== "PUBLISHED") && (actor.admin || actor.id === doc.created_by)
+      fileUrl: !doc.deleted_at && r.status === "APPROVED" && doc.status === "PUBLISHED" && doc.current_version === r.version_label && r.file_path ? revisionFileUrl(r.id) : null,
+      reviewFileUrl: (doc.deleted_at || r.status !== "APPROVED" || doc.current_version !== r.version_label || doc.status !== "PUBLISHED") && (actor.admin || actor.id === doc.created_by)
         ? submitted ? submissionReviewFileUrl(submitted.id) : r.file_path ? revisionReviewFileUrl(r.id) : null : null,
       lockVersion: r.lock_version, submittedAt: r.submitted_at?.toISOString() || null,
       approvedAt: r.approved_at?.toISOString() || null, approvedBy: r.approved_name || r.approved_by,
@@ -283,8 +284,8 @@ export async function qualityWorkflowDetail(documentId: string, userId: string):
         changeReason: s.change_reason || "", reviewerName: s.reviewer_name, reviewerAt: s.reviewer_at?.toISOString() || null,
         effectiveDate: s.effective_date?.toISOString().slice(0, 10) || null,
         fileName: s.file_name,
-        fileUrl: s.status === "APPROVED" && r.status === "APPROVED" && doc.status === "PUBLISHED" && doc.current_version === r.version_label ? submissionFileUrl(s.id) : null,
-        reviewFileUrl: s.status !== "APPROVED" || r.status !== "APPROVED" || doc.current_version !== r.version_label || doc.status !== "PUBLISHED" ? submissionReviewFileUrl(s.id) : null,
+        fileUrl: !doc.deleted_at && s.status === "APPROVED" && r.status === "APPROVED" && doc.status === "PUBLISHED" && doc.current_version === r.version_label ? submissionFileUrl(s.id) : null,
+        reviewFileUrl: doc.deleted_at || s.status !== "APPROVED" || r.status !== "APPROVED" || doc.current_version !== r.version_label || doc.status !== "PUBLISHED" ? submissionReviewFileUrl(s.id) : null,
         status: s.status,
         submittedBy: s.submitted_name, submittedAt: s.submitted_at.toISOString(),
         capturedAt: s.captured_at.toISOString(), source: s.source,
@@ -324,7 +325,7 @@ export async function qualityRevisionFile(revisionId: string, userId: string, pu
   if (!revision?.file_path) fail("ไม่พบไฟล์เอกสาร");
   if (purpose === "review") {
     if (!manages(actor, revision.document.created_by)) fail("ไม่มีสิทธิ์เปิดไฟล์เพื่อตรวจทาน");
-  } else if (revision.status !== "APPROVED" || revision.document.status !== "PUBLISHED" || revision.document.current_version !== revision.version_label) fail("ดาวน์โหลดเพื่อใช้งานได้เฉพาะฉบับอนุมัติที่มีผลใช้ปัจจุบัน");
+  } else if (revision.document.deleted_at || revision.status !== "APPROVED" || revision.document.status !== "PUBLISHED" || revision.document.current_version !== revision.version_label) fail("ดาวน์โหลดเพื่อใช้งานได้เฉพาะฉบับอนุมัติที่มีผลใช้ปัจจุบัน");
   if (revision.document.deleted_at && !actor.admin) fail("เอกสารนี้ถูกลบแล้ว");
   const evidence = revision.submissions[0];
   if (evidence && revision.status !== "DRAFT") return { path: evidence.file_path, name: evidence.file_name, hash: evidence.file_sha256, evidence: true };
@@ -341,7 +342,7 @@ export async function qualitySubmissionFile(submissionId: string, userId: string
   if (!submission) fail("ไม่พบสำเนาส่งตรวจ");
   const doc = submission.revision.document;
   if ((!actor.admin && doc.created_by !== actor.id) || (doc.deleted_at && !actor.admin)) fail("ไม่มีสิทธิ์ดูสำเนาส่งตรวจ");
-  if (purpose !== "review" && (submission.status !== "APPROVED" || submission.revision.status !== "APPROVED" || doc.status !== "PUBLISHED" || doc.current_version !== submission.revision.version_label)) {
+  if (purpose !== "review" && (doc.deleted_at || submission.status !== "APPROVED" || submission.revision.status !== "APPROVED" || doc.status !== "PUBLISHED" || doc.current_version !== submission.revision.version_label)) {
     fail("ดาวน์โหลดเพื่อใช้งานได้เฉพาะฉบับที่อนุมัติแล้ว");
   }
   return { path: submission.file_path, name: submission.file_name, hash: submission.file_sha256 };

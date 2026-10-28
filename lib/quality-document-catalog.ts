@@ -1,6 +1,10 @@
 import type { MasterData, QaCriterion } from "@/types/master-data";
+import { isQualityCalendarDate } from "./quality-effective-date";
 
 export type DocumentFormValues = {
+  documentMode?: "new" | "revision";
+  documentId?: string;
+  effectiveDate?: string;
   department?: string;
   job?: string;
   curriculum?: string;
@@ -11,6 +15,7 @@ export type DocumentFormValues = {
 };
 
 export const EMPTY_DOCUMENT: DocumentFormValues = {
+  documentMode: "new",
   title: "",
   description: "",
 };
@@ -254,6 +259,9 @@ export function readDocumentDraft(
 
     return {
       values: {
+        documentMode: values.documentMode === "revision" ? "revision" : "new",
+        documentId: typeof values.documentId === "string" && /^[1-9]\d{0,19}$/.test(values.documentId) ? values.documentId : undefined,
+        effectiveDate: isQualityCalendarDate(values.effectiveDate) ? values.effectiveDate : undefined,
         department: department?.value,
         job,
         curriculum: program?.value,

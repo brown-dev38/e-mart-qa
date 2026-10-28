@@ -6,6 +6,8 @@ import { seedDepartmentData } from "./seed-department-data.mjs";
 
 const adapter = new PrismaMariaDb(process.env.DATABASE_URL as string);
 const prisma = new PrismaClient({ adapter });
+// node prisma/seed.ts --skip-users seeds master data without changing user accounts.
+const skipUsers = process.argv.includes("--skip-users");
 
 const ROLES: { name: string }[] = [
   { name: "admin" },
@@ -64,7 +66,7 @@ const QA_FRAMEWORKS = [
     version_year: "2020",
   },
   {
-    code: "AUN",
+    code: "AUN-QA",
     prefix_char: "A",
     name_th: "เกณฑ์เครือข่ายการประกันคุณภาพมหาวิทยาลัยอาเซียน (AUN-QA)",
     name_en: "ASEAN University Network - Quality Assurance",
@@ -83,7 +85,7 @@ const QA_PROGRAMS = [
     code: "B.PMD.",
     name_th: "หลักสูตรฉุกเฉินการแพทยบัณฑิต",
     name_en: "Bachelor of Paramedicine Program",
-    framework: "AUN",
+    framework: "AUN-QA",
   },
 ];
 
@@ -156,7 +158,7 @@ const QA_CRITERIA: {
     sort_order: 2,
   },
   {
-    framework: "AUN",
+    framework: "AUN-QA",
     parent: null,
     code: "A1",
     section_number: "1",
@@ -168,7 +170,7 @@ const QA_CRITERIA: {
     sort_order: 1,
   },
   {
-    framework: "AUN",
+    framework: "AUN-QA",
     parent: "A1",
     code: "A1.1",
     section_number: "1.1",
@@ -180,7 +182,7 @@ const QA_CRITERIA: {
     sort_order: 1,
   },
   {
-    framework: "AUN",
+    framework: "AUN-QA",
     parent: "A1.1",
     code: "A1.1-1",
     section_number: "1.1-1",
@@ -213,7 +215,8 @@ async function main() {
     }
   }
 
-  for (const spec of USERS) {
+  if (skipUsers) console.log("Skipping user accounts (--skip-users).");
+  for (const spec of skipUsers ? [] : USERS) {
     const role = await prisma.role.findFirst({ where: { name: spec.role } });
     if (!role) throw new Error(`role "${spec.role}" not found`);
 
@@ -252,7 +255,7 @@ async function main() {
       throw new Error(`department "${subDepartment.department}" not found`);
     }
     const { department: _department, ...data } = subDepartment;
-    const workFlow = ({ ADM: "ADM", TCH: "TCH", ASM: "ASM" } as const)[data.code as "ADM" | "TCH" | "ASM"] ?? null;
+    const workFlow = ({ ADM: "ADM", TCH: "TCH", ASM: "ASM", STU: "STU" } as const)[data.code as "ADM" | "TCH" | "ASM" | "STU"] ?? null;
     await prisma.docs_sub_departments.upsert({
       where: {
         department_id_code: {
@@ -260,7 +263,7 @@ async function main() {
           code: data.code,
         },
       },
-      update: { ...data, updated_at: now },
+      update: { ...data, document_workflow: workFlow, updated_at: now },
       create: {
         ...data,
         department_id: department.id,

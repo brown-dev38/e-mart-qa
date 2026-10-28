@@ -156,7 +156,7 @@ erDiagram
 
 | คอลัมน์ | ชนิดข้อมูล | ข้อกำหนด | Default | ความหมาย |
 | --- | --- | --- | --- | --- |
-| `document_workflow` | ENUM('QA','CM','TCH','ASM','ADM') | NULL | — | รูปแบบเอกสารของงาน; NULL ใช้เอกสารคุณภาพทั่วไป |
+| `document_workflow` | ENUM('QAS','CUR','TCH','ASM','ADM','STU') | NULL | — | รูปแบบเอกสารของงาน; NULL และ STU ใช้เอกสารคุณภาพทั่วไป |
 | `id` | INT UNSIGNED | NN, PK, AI | AI | รหัสรายการ |
 | `department_id` | INT UNSIGNED | NN, FK → docs_departments.id | — | หน่วยงาน |
 | `code` | VARCHAR(20) | NN | — | รหัสงาน แก้ไขแยกจาก document_workflow ได้ |
@@ -279,13 +279,15 @@ erDiagram
 | `created_at` | TIMESTAMP(0) | NN | now() | เวลาสร้าง |
 | `title` | VARCHAR(500) | NN | — | ชื่อเอกสารของฉบับนี้ |
 | `description` | TEXT | NULL | — | คำอธิบายของฉบับนี้ |
-| `status` | ENUM('DRAFT','PENDING','APPROVED') | NN | DRAFT | สถานะฉบับ |
-| `revision_number` | SMALLINT UNSIGNED | NULL | — | เลขฉบับอนุมัติ; ร่างและประวัติรุ่นเก่าอาจเป็น NULL |
+| `status` | ENUM('DRAFT','PENDING','APPROVED','SUPERSEDED','WITHDRAWN') | NN | DRAFT | สถานะฉบับ; ฉบับตั้งวันอัตโนมัติยังเป็น DRAFT จนถึงวันที่กำหนด |
+| `auto_publish` | BOOLEAN | NN, INDEX ร่วม status/effective_date | false | true = ให้มีผลใช้อัตโนมัติเมื่อถึง effective_date; false คง workflow เดิม |
+| `effective_date` | DATE | NULL | — | วันที่มีผลใช้บังคับตามปฏิทินประเทศไทย |
+| `revision_number` | SMALLINT UNSIGNED | NULL | — | เลขฉบับ; ฉบับอัตโนมัติจองเลขเมื่อบันทึก ส่วนร่างรุ่นเก่าอาจเป็น NULL |
 | `open_slot` | TINYINT UNSIGNED | NULL | — | 1 = ฉบับร่าง/รออนุมัติ, NULL = ฉบับอนุมัติ |
 | `lock_version` | INT UNSIGNED | NN | 0 | เพิ่มทุกครั้งที่แก้ไข/เปลี่ยนสถานะ ป้องกันคำขอเก่า |
 | `submitted_by` | VARCHAR(100) | NULL | — | ผู้ส่งตรวจ ไม่มี FK |
 | `submitted_at` | TIMESTAMP(0) | NULL | — | เวลาส่งตรวจล่าสุด |
-| `approved_by` | VARCHAR(100) | NULL | — | ผู้อนุมัติ ไม่มี FK |
+| `approved_by` | VARCHAR(100) | NULL | — | ผู้อนุมัติ ไม่มี FK; SYSTEM สำหรับการมีผลใช้อัตโนมัติ |
 | `approved_at` | TIMESTAMP(0) | NULL | — | เวลาอนุมัติ |
 | `updated_at` | TIMESTAMP(3) | NN, @updatedAt | now() | เวลาแก้ไขล่าสุด |
 
@@ -438,7 +440,7 @@ erDiagram
 | --- | --- | --- |
 | docs_qa_document_status | DRAFT, PUBLISHED, ARCHIVED | docs_qa_documents.status |
 | docs_wfme_standard_type | NONE, BASIC, QUALITY_DEV | docs_qa_criteria.wfme_standard_type |
-| docs_document_workflow | QA, CM, TCH, ASM, ADM | docs_sub_departments.document_workflow (NULL ได้) |
+| docs_document_workflow | QAS, CUR, TCH, ASM, ADM, STU | docs_sub_departments.document_workflow (NULL ได้) |
 | docs_revision_status | DRAFT, PENDING, APPROVED | docs_qa_document_revisions.status |
 | docs_submission_status | PENDING, RETURNED, APPROVED | docs_qa_submissions.status |
 
@@ -518,16 +520,17 @@ MGT-M.D.-QM-W1.1.1-000
 
 | Workflow / กรอบเกณฑ์ | โหมด | academic_year_id | curriculum_version_id | course_offering_id | document_type ที่ระบบรับ |
 | --- | --- | --- | --- | --- | --- |
-| QA / WFME | year | ต้องมี | NULL | NULL | SAR, ACCREDITATION, APR, APR_RESULT |
-| QA / AUN | year | ต้องมี | NULL | NULL | SAR, CAR |
-| CM | version | NULL | ต้องมี | NULL | CURRICULUM |
+| QAS / WFME | year | ต้องมี | NULL | NULL | SAR, ACCREDITATION, APR, APR_RESULT |
+| QAS / AUN หรือ AUN-QA | year | ต้องมี | NULL | NULL | SAR, CAR |
+| CUR | version | NULL | ต้องมี | NULL | CURRICULUM |
 | TCH | course | ต้องมี | NULL | ต้องมี | TQF3, TQF5, EVALUATION |
 | ASM | course | ต้องมี | NULL | ต้องมี | STUDY_RESULT |
 | ADM | year | ต้องมี | NULL | NULL | ADMISSION_ANNOUNCEMENT |
 
 - หน่วยงาน งานย่อย หลักสูตร กรอบเกณฑ์ และข้อมูลบริบทที่ใช้ต้องเปิดใช้งาน หน่วยงานต้องรองรับงานย่อย
 - ฉบับหลักสูตรต้องอยู่ใต้หลักสูตรที่เลือก การเปิดสอนต้องตรงหลักสูตรและปีการศึกษา รวมทั้งรายวิชา ภาคเรียน และชั้นปีต้องเปิดใช้งาน
-- QA รองรับประเภทไฟล์ตามรหัสกรอบเกณฑ์ WFME หรือ AUN เท่านั้น
+- QAS รองรับประเภทไฟล์ตามรหัสกรอบเกณฑ์ WFME, AUN หรือ AUN-QA เท่านั้น
+- STU ใช้รายการเอกสารคุณภาพทั่วไปใน docs_qa_documents เช่นเดียวกับ workflow ที่เป็น NULL
 - ต้องแนบไฟล์ และใช้ user ID จาก session เป็น created_by
 - บล็อกการเปลี่ยนหน่วยงานหรือ workflow ของงานย่อยที่มีเอกสารงานแล้ว และบล็อกการย้ายฉบับหลักสูตร/รายวิชา/การเปิดสอนที่มีเอกสารอ้างอิงตามเงื่อนไขใน lib/master-data.ts และ lib/academic-data.ts
 
@@ -558,6 +561,8 @@ created_by, updated_by, uploaded_by เป็น VARCHAR ไม่มี FK ไ�
 | 20261024000000_add_quality_document_approval | เพิ่มฉบับร่าง/รออนุมัติ ตัวนับฉบับ ประวัติการตรวจ และนำเข้าทะเบียนเดิม |
 | 20261024010000_add_audit_and_document_deletion | เพิ่มข้อมูลการลบออกจากรายการ และ audit_logs พร้อมนำเข้าประวัติการตรวจเดิม |
 | 20261024020000_preserve_quality_submission_drafts | เก็บสำเนาร่างทุกครั้งที่ส่งตรวจ เชื่อมผลตรวจและนำเข้าเฉพาะรอบที่ยังรออนุมัติ |
+| 20261027000000_align_document_workflow_codes | ย้าย workflow QA → QAS, CM → CUR และเพิ่ม STU โดยเก็บงานย่อยและเอกสารเดิม |
+| 20261027010000_schedule_quality_document_effective_dates | เพิ่ม auto_publish และ index สำหรับฉบับร่างที่รอวันที่มีผลใช้บังคับ |
 
 ตรวจสถานะและ deploy migrations จาก project root หลังตั้ง DATABASE_URL:
 
@@ -572,7 +577,7 @@ Deploy เปลี่ยนฐานข้อมูลตาม migration ท�
 ## 9. ข้อมูลเริ่มต้น
 
 - prisma/seed.ts: บทบาท บัญชีทดสอบ หน่วยงาน EDU/MGT งานย่อย กรอบ WFME/AUN หลักสูตร M.D./B.PMD. ระดับ QM/SP/WI/FM/SD และเกณฑ์ตัวอย่าง จากนั้นเรียก seed ข้อมูลการศึกษา
-- prisma/seed-department-documents.mjs เรียก seed-department-data.mjs: เพิ่มปี 2569 ภาคเรียน 1/2/SUMMER ชั้นปี 1–6 งาน QA/CM และฉบับหลักสูตรที่ยังขาด โดย upsert ใช้ update ว่าง ไม่เพิ่มรายวิชาหรือไฟล์สมมติ
+- prisma/seed-department-documents.mjs เรียก seed-department-data.mjs: เพิ่มปี 2569 ภาคเรียน 1/2/SUMMER ชั้นปี 1–6 งาน QAS/CUR และฉบับหลักสูตรที่ยังขาด อัปเดต workflow ของงาน QAS/CUR ที่มีอยู่ ไม่เพิ่มรายวิชาหรือไฟล์สมมติ
 - ฉบับหลักสูตรเริ่มต้น: M.D. ปี 2553/2565/2570; B.PMD. ปี 2553/2559/2564/2569 โดยปี 2553 ตั้ง is_initial = true
 
 Seed ทั้งระบบอัปเดตบัญชีทดสอบและรหัสผ่านเดิม จึงควรใช้เฉพาะฐานข้อมูลสำหรับพัฒนา การเพิ่มข้อมูลการศึกษาให้ระบบเดิมดู [department-documents-setup.md](./department-documents-setup.md) เกณฑ์ใน seed เป็นตัวอย่าง ไม่ใช่ชุดเกณฑ์ฉบับสมบูรณ์

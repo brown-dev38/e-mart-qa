@@ -2,25 +2,44 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { Alert, Button, Card, Descriptions, Empty, Input, Pagination, Select, Table, Tag, type TableProps } from "antd";
-import { Download, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { Download, Eye, FilePlus2, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
 import { listQualityDocumentsAction } from "./documents/actions";
-import QualityDocumentWorkflow from "./quality-document-workflow";
+import QualityDocumentVersions from "./quality-document-versions";
+import QualityDocumentDeleteButton from "./quality-document-delete-button";
 import type { QualityDocumentListItem, QualityDocumentStatus, QualityDocumentScope } from "@/types/quality-document";
 import "./quality-document-list.css";
 
-const STATUS_META = { DRAFT: { label: "ฉบับร่าง", color: "default" }, PUBLISHED: { label: "มีผลใช้งาน", color: "green" }, ARCHIVED: { label: "ยกเลิกใช้", color: "orange" } };
+const STATUS_META = { DRAFT: { label: "ฉบับร่าง", color: "default" }, PUBLISHED: { label: "มีผลใช้บังคับ", color: "green" }, ARCHIVED: { label: "ยกเลิกใช้", color: "orange" } };
 const STATUS_FILTERS = [...Object.entries(STATUS_META).map(([value, meta]) => ({ value, label: meta.label })), { value: "RETURNED", label: "ส่งกลับให้แก้ไข" }, { value: "PENDING", label: "รออนุมัติ" }];
 type StatusFilter = QualityDocumentStatus | "RETURNED" | "PENDING";
 function statusTag(doc: QualityDocumentListItem) {
   let { label, color } = STATUS_META[doc.status];
-  if (doc.scheduled_version) { label = doc.current_version === null ? `ฉบับ ${doc.scheduled_version} อนุมัติแล้ว · รอมีผล` : `ใช้งาน ${doc.current_version} · ฉบับ ${doc.scheduled_version} รอมีผล`; color = "blue"; }
   if (doc.status === "DRAFT" && doc.open_revision_status === "PENDING") { label = "รออนุมัติ"; color = "gold"; }
   if (doc.status === "PUBLISHED" && doc.open_revision_status) label = doc.open_revision_status === "DRAFT" ? "ใช้งาน · มีร่างใหม่" : "ใช้งาน · ฉบับใหม่รออนุมัติ";
   if (doc.open_revision_returned) { label = doc.status === "PUBLISHED" ? "ใช้งาน · ฉบับใหม่รอแก้ไข" : "ส่งกลับให้แก้ไข"; color = "orange"; }
+  if (doc.scheduled_version) {
+    const waiting = doc.scheduled_is_draft ? "ฉบับร่าง · รอมีผล" : "อนุมัติแล้ว · รอมีผล";
+    label = doc.current_version === null ? `ฉบับ ${doc.scheduled_version} · ${waiting}` : `ใช้งาน ${doc.current_version} · ฉบับ ${doc.scheduled_version} ${waiting}`;
+    color = doc.scheduled_is_draft ? "default" : "blue";
+  }
   return <Tag color={color} className="!m-0 whitespace-normal">{label}</Tag>;
 }
 
-export default function QualityDocumentList({ scope }: { scope?: QualityDocumentScope }) {
+function effectiveDateDetails(doc: QualityDocumentListItem) {
+  const date = doc.effective_date ?? (doc.current_version === null ? doc.scheduled_effective_date : null);
+  const formattedDate = (value: string) => {
+    const [year, month, day] = value.split("-");
+    return <time dateTime={value} className="whitespace-nowrap">{day}/{month}/{year}</time>;
+  };
+  return <div className="text-xs">
+    <p>{date ? formattedDate(date) : "—"}</p>
+    {doc.current_version !== null && doc.scheduled_effective_date && <p className="mt-1 text-muted">
+      ฉบับ {doc.scheduled_version} รอมีผล: {formattedDate(doc.scheduled_effective_date)}
+    </p>}
+  </div>;
+}
+
+export default function QualityDocumentList({ scope, canDelete = false, onUpdateRevision }: { scope?: QualityDocumentScope; canDelete?: boolean; onUpdateRevision?: (documentId: string) => void }) {
   const programCode = scope?.programCode, departmentCode = scope?.departmentCode, subDepartmentCode = scope?.subDepartmentCode;
   const [documents, setDocuments] = useState<QualityDocumentListItem[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -59,12 +78,29 @@ export default function QualityDocumentList({ scope }: { scope?: QualityDocument
     (!status || (status === "RETURNED" ? doc.open_revision_returned : status === "PENDING" ? doc.open_revision_status === "PENDING" : status === "DRAFT" ? doc.status === "DRAFT" && doc.open_revision_status !== "PENDING" && !doc.open_revision_returned : doc.status === status))), [documents, search, department, program, level, status]);
   const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / 5)));
   const activeFilters = [department, program, level, status].filter(Boolean).length;
-  const openFile = (doc: QualityDocumentListItem) => doc.status === "PUBLISHED" && doc.file_path && <Button href={doc.file_path} target="_blank" rel="noreferrer" aria-label={`ดาวน์โหลดฉบับอนุมัติ ${doc.title}`} icon={<Download size={15} aria-hidden="true" />}>ดาวน์โหลด</Button>;
+  const downloadButton = (doc: QualityDocumentListItem) => {
+    const available = doc.status === "PUBLISHED" && doc.current_version !== null && !!doc.file_path;
+    return <Button href={available ? doc.file_path! : undefined} disabled={!available} target="_blank" rel="noreferrer"
+      aria-label={`ดาวน์โหลดเอกสาร ${doc.title}`}
+      title={available ? `ดาวน์โหลดฉบับ ${doc.current_version} ที่มีผลใช้บังคับ` : doc.status === "PUBLISHED" ? "ยังไม่มีไฟล์ฉบับที่มีผลใช้บังคับสำหรับดาวน์โหลด" : "ดาวน์โหลดได้เฉพาะเอกสารที่มีผลใช้บังคับ"}
+      icon={<Download size={15} aria-hidden="true" />} />;
+  };
+  const detailsButton = (doc: QualityDocumentListItem) => <Button onClick={() => setSelected(doc.id)}
+    title="รายละเอียดเอกสาร" aria-label={`รายละเอียดเอกสาร ${doc.title}`}
+    icon={<Eye size={15} aria-hidden="true" />} />;
+  const deleteButton = (doc: QualityDocumentListItem) => canDelete && <QualityDocumentDeleteButton documentId={doc.id} title={doc.title} onDeleted={() => { setSelected(null); load(); }} />;
+  const updateButton = (doc: QualityDocumentListItem) => doc.can_create_revision && onUpdateRevision && <Button
+    onClick={() => onUpdateRevision(doc.id)} title="อัปเดตฉบับใหม่" aria-label={`อัปเดตฉบับใหม่ของ ${doc.title}`}
+    icon={<FilePlus2 size={15} aria-hidden="true" />} />;
+  const managementActions = (doc: QualityDocumentListItem) => <div className="qa-document-management-actions">
+    {downloadButton(doc)}{detailsButton(doc)}{updateButton(doc)}{deleteButton(doc)}
+  </div>;
   const columns: NonNullable<TableProps<QualityDocumentListItem>["columns"]> = [
     { title: "เอกสาร", key: "document", render: (_, doc) => <div><button className="qa-document-title" onClick={() => setSelected(doc.id)}>{doc.title}</button><p className="mt-1 break-all font-mono text-xs text-muted">รหัสเอกสาร: {doc.document_code}</p><p className="mt-1 text-xs text-muted">{doc.current_version !== null ? `ฉบับ: ${doc.current_version}` : "ยังไม่มีฉบับมีผลใช้"}</p><p className="mt-1 text-xs text-muted">{doc.department_code}{doc.sub_department_code ? ` / ${doc.sub_department_code}` : ""} · {doc.program_code}</p></div> },
     { title: "ประเภท / เกณฑ์", key: "category", width: 125, render: (_, doc) => <div><p className="text-sm">{doc.level_code}</p><p className="text-xs text-muted">{doc.criterion_code ?? "—"}</p></div> },
     { title: "สถานะ", key: "status", width: 160, render: (_, doc) => statusTag(doc) },
-    { title: "เปิดเอกสาร", key: "actions", width: 200, render: (_, doc) => <div className="flex gap-2">{openFile(doc)}<Button onClick={() => setSelected(doc.id)}>รายละเอียด</Button></div> },
+    { title: "วันที่มีผลใช้บังคับ", key: "effectiveDate", width: 155, render: (_, doc) => effectiveDateDetails(doc) },
+    { title: "จัดการเอกสาร", key: "actions", width: canDelete ? 200 : 160, render: (_, doc) => managementActions(doc) },
   ];
   const pagination = { current: currentPage, pageSize: 5, total: filtered.length, onChange: setPage, showSizeChanger: false, hideOnSinglePage: true };
   return <Card size="small" className="qa-document-list">
@@ -82,7 +118,7 @@ export default function QualityDocumentList({ scope }: { scope?: QualityDocument
     </div>}
     {error && <Alert type="error" showIcon className="mb-3" title={error} action={<Button size="small" onClick={load}>ลองใหม่</Button>} />}
     <p className="my-3 text-xs text-muted">พบ {filtered.length} จาก {documents.length} รายการ · กดชื่อเอกสารเพื่อดูรายละเอียด</p>
-    <div className="qa-desktop-documents"><Table<QualityDocumentListItem> rowKey="id" dataSource={filtered} columns={columns} loading={pending} size="small" scroll={{ x: 760 }} pagination={pagination}
+    <div className="qa-desktop-documents"><Table<QualityDocumentListItem> rowKey="id" dataSource={filtered} columns={columns} loading={pending} size="small" scroll={{ x: 915 }} pagination={pagination}
       expandable={{ expandedRowRender: doc => <Descriptions size="small" column={2} items={[
         { key: "department", label: "หน่วยงาน", children: doc.department_name }, { key: "program", label: "หลักสูตร", children: doc.program_name },
         { key: "criterion", label: "เกณฑ์", children: doc.criterion_code ? `${doc.criterion_code} ${doc.criterion_title ?? ""}` : "—" }, { key: "created", label: "สร้างเมื่อ", children: new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(new Date(doc.created_at)) },
@@ -92,11 +128,12 @@ export default function QualityDocumentList({ scope }: { scope?: QualityDocument
         <button className="qa-document-title" onClick={() => setSelected(doc.id)}>{doc.title}</button>
         <p className="mt-1 break-all font-mono text-xs text-muted">รหัสเอกสาร: {doc.document_code}</p><p className="mt-1 text-xs text-muted">{doc.current_version !== null ? `ฉบับ: ${doc.current_version}` : "ยังไม่มีฉบับมีผลใช้"}</p>
         <div className="my-3 flex flex-wrap items-center gap-2">{statusTag(doc)}<span className="text-xs text-muted">{doc.department_code} · {doc.program_code}</span></div>
-        <div className="flex gap-2">{openFile(doc)}<Button onClick={() => setSelected(doc.id)}>รายละเอียด / แก้ไข</Button></div>
+        <div className="mb-3"><p className="mb-1 text-xs text-muted">วันที่มีผลใช้บังคับ</p>{effectiveDateDetails(doc)}</div>
+        {managementActions(doc)}
       </article>)}
       {!filtered.length && <Empty description={loaded ? "ไม่พบเอกสารตามเงื่อนไข" : "กำลังโหลดเอกสาร…"} />}
       <Pagination size="small" {...pagination} />
     </div>
-    {selected && <QualityDocumentWorkflow documentId={selected} onClose={() => setSelected(null)} onChanged={load} />}
+    {selected && <QualityDocumentVersions key={selected} documentId={selected} onClose={() => setSelected(null)} />}
   </Card>;
 }

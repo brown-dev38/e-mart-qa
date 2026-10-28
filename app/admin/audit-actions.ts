@@ -1,9 +1,10 @@
 "use server";
 
 import { auth } from "@/lib/auth";
+import { revalidatePath } from "next/cache";
 import { ActionError } from "@/lib/current-actor";
 import { listAuditLog } from "@/lib/audit-log";
-import { deleteQualityDocument, listQualityDeletion } from "@/lib/quality-document-deletion";
+import { deleteQualityDocument, listQualityDeletion, qualityDeletionDetail } from "@/lib/quality-document-deletion";
 import type { AuditFilter, DeleteQualityCommand } from "@/types/audit";
 
 async function identity() {
@@ -23,6 +24,14 @@ export async function listQualityDeletionAction(deleted = false, search = "") {
   catch (error) { return failure(error); }
 }
 export async function deleteQualityDocumentAction(command: DeleteQualityCommand) {
-  try { return await deleteQualityDocument(command, await identity()); }
+  try {
+    const result = await deleteQualityDocument(command, await identity());
+    if (result.ok) revalidatePath("/");
+    return result;
+  }
+  catch (error) { return failure(error); }
+}
+export async function getQualityDeletionAction(documentId: string) {
+  try { return { ok: true as const, document: await qualityDeletionDetail(documentId, await identity()) }; }
   catch (error) { return failure(error); }
 }

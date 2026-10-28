@@ -1,0 +1,168 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { randomUUID } from "node:crypto";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+test("version previews and effective-date forms work on desktop and mobile", {
+  skip: process.env.RUN_BROWSER_TESTS !== "1", timeout: 90_000,
+}, async () => {
+  await import("dotenv/config");
+  const { PrismaClient } = await import("@prisma/client");
+  const { PrismaMariaDb } = await import("@prisma/adapter-mariadb");
+  const { encode } = await import("next-auth/jwt");
+  const { qualityToday } = await import("../lib/quality-effective-date.ts");
+  const base = new URL(process.env.NEXT_TEST_URL || "http://localhost:3000");
+  const debuggerUrl = new URL(process.env.BROWSER_DEBUG_URL || "http://localhost:9337");
+  for (const url of [base, debuggerUrl]) assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname));
+  const prisma = new PrismaClient({ adapter: new PrismaMariaDb(process.env.DATABASE_URL) });
+  const marker = "UI" + randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+  const filename = `storage/qa-documents/${randomUUID()}.pdf`;
+  let user, department, framework, program, document, ws, sessionId;
+  let sequence = 0, isolatedBrowser = false;
+  const inflight = new Map();
+  function rpc(method, params = {}, session = true) {
+    const id = ++sequence;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { inflight.delete(id); reject(new Error(`CDP timeout: ${method}`)); }, 15_000);
+      inflight.set(id, { resolve, reject, timer });
+      ws.send(JSON.stringify({ id, method, params, ...(session && sessionId ? { sessionId } : {}) }));
+    });
+  }
+  async function evaluate(expression) {
+    const result = await rpc("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+    return result.result.value;
+  }
+  async function until(expression) {
+    const start = Date.now();
+    while (Date.now() - start < 30_000) {
+      if (await evaluate(expression)) return;
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    const form = await evaluate("({errors:Array.from(document.querySelectorAll('.ant-form-item-explain-error')).map(item=>item.textContent),alerts:Array.from(document.querySelectorAll('.qa-document-form .ant-alert')).map(item=>item.textContent),inputs:Array.from(document.querySelectorAll('.qa-document-form input')).map(item=>({id:item.id,type:item.type,value:item.type==='file'?item.files.length:item.value})),messages:document.querySelector('#_rht_toaster')?.textContent})");
+    throw new Error(`Browser state did not become ready: ${JSON.stringify(form)}`);
+  }
+  async function click(expression) {
+    const position = await evaluate(`(()=>{const element=${expression};element.scrollIntoView({block:'center'});const rect=element.getBoundingClientRect();return {x:rect.x+rect.width/2,y:rect.y+rect.height/2};})()`);
+    await rpc("Input.dispatchMouseEvent", { type: "mousePressed", ...position, button: "left", clickCount: 1 });
+    await rpc("Input.dispatchMouseEvent", { type: "mouseReleased", ...position, button: "left", clickCount: 1 });
+  }
+  async function input(id, value) {
+    await evaluate(`(()=>{const input=document.getElementById(${JSON.stringify(id)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  }
+  async function select(id, label) {
+    await until(`Boolean(document.getElementById(${JSON.stringify(id)})) && !document.getElementById(${JSON.stringify(id)}).disabled`);
+    await click(`document.getElementById(${JSON.stringify(id)}).closest('.ant-select')`);
+    const popup = `document.getElementById(document.getElementById(${JSON.stringify(id)}).getAttribute('aria-controls'))?.closest('.ant-select-dropdown')`;
+    await until(`document.getElementById(${JSON.stringify(id)}).getAttribute('aria-expanded')==='true' && Array.from((${popup})?.querySelectorAll('.ant-select-item-option')??[]).some(option=>option.textContent.includes(${JSON.stringify(label)}) && option.getBoundingClientRect().width>0)`);
+    await click(`Array.from((${popup}).querySelectorAll('.ant-select-item-option')).find(option=>option.textContent.includes(${JSON.stringify(label)}) && option.getBoundingClientRect().width>0)`);
+    await until(`document.getElementById(${JSON.stringify(id)}).getAttribute('aria-expanded')!=='true'`);
+  }
+  async function attach() {
+    const dom = await rpc("DOM.getDocument");
+    const file = await rpc("DOM.querySelector", { nodeId: dom.root.nodeId, selector: ".qa-document-form input[type=file]" });
+    await rpc("DOM.setFileInputFiles", { nodeId: file.nodeId, files: [path.resolve(filename)] });
+    await until("Boolean(document.querySelector('.qa-document-form .ant-upload-list-item-name'))");
+  }
+  try {
+    const role = await prisma.role.findFirstOrThrow({ where: { name: "admin", is_active: true } });
+    user = await prisma.users.create({ data: { username: marker, role_id: role.id, created_at: new Date(), updated_at: new Date() } });
+    department = await prisma.docs_departments.create({ data: { code: marker, name_th: marker } });
+    framework = await prisma.docs_accreditation_frameworks.create({ data: { code: marker, name_th: marker, prefix_char: "W" } });
+    program = await prisma.docs_programs.create({ data: { code: marker, name_th: marker, framework_id: framework.id } });
+    const level = await prisma.docs_document_levels.findUniqueOrThrow({ where: { code: "SP" } });
+    await mkdir("storage/qa-documents", { recursive: true });
+    await writeFile(filename, "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 240] /Resources << >> /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF");
+    document = await prisma.docs_qa_documents.create({ data: {
+      document_code: marker, title: marker, status: "PUBLISHED", current_version: "001", approved_revision_no: 1, created_by: String(user.id),
+      department_id: department.id, program_id: program.id, document_level_id: level.id, revisions: { create: [
+        { version_label: "001", revision_number: 1, status: "APPROVED", title: marker, file_path: filename, file_name: "preview.pdf" },
+        { version_label: "000", revision_number: 0, status: "SUPERSEDED", title: marker, file_path: filename, file_name: "preview-old.pdf" },
+      ] },
+    } });
+    const version = await (await fetch(new URL("/json/version", debuggerUrl))).json();
+    ws = new WebSocket(version.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => { ws.addEventListener("open", resolve, { once: true }); ws.addEventListener("error", reject, { once: true }); });
+    ws.addEventListener("message", event => {
+      const message = JSON.parse(event.data), request = inflight.get(message.id);
+      if (request) {
+        clearTimeout(request.timer); inflight.delete(message.id);
+        if (message.error) request.reject(new Error(message.error.message)); else request.resolve(message.result);
+      }
+    });
+    const command = await rpc("Browser.getBrowserCommandLine", {}, false);
+    assert.ok(command.arguments.some(arg => arg.includes("e-smart-qa-preview-")), "only use an isolated test browser");
+    isolatedBrowser = true;
+    const target = await rpc("Target.createTarget", { url: "about:blank" }, false);
+    sessionId = (await rpc("Target.attachToTarget", { targetId: target.targetId, flatten: true }, false)).sessionId;
+    await rpc("Page.enable"); await rpc("Runtime.enable"); await rpc("Network.enable");
+    await rpc("Emulation.setDeviceMetricsOverride", { width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false });
+    const token = await encode({ secret: process.env.NEXTAUTH_SECRET, token: { uid: String(user.id), sub: String(user.id), role: "admin", name: marker }, maxAge: 180 });
+    await rpc("Network.setCookie", { name: "next-auth.session-token", value: token, url: base.origin, httpOnly: true, sameSite: "Lax" });
+    const navigation = { section: "documents-all", openKeys: ["documents"], curriculum: null, workType: null };
+    await rpc("Page.addScriptToEvaluateOnNewDocument", { source: `localStorage.setItem(${JSON.stringify(`e-smart-qa:dashboard:${user.id}`)},${JSON.stringify(JSON.stringify(navigation))});` });
+    await rpc("Page.navigate", { url: base.href });
+    await until(`Array.from(document.querySelectorAll('button.qa-document-title')).some(button=>button.textContent===${JSON.stringify(marker)})`);
+    await evaluate(`Array.from(document.querySelectorAll('button.qa-document-title')).find(button=>button.textContent===${JSON.stringify(marker)}).click()`);
+    await until("Boolean(document.querySelector('.ant-modal-body .qa-version-preview img')?.naturalWidth)");
+    const desktop = await evaluate("(()=>{const modal=document.querySelector('.ant-modal');return {title:modal.querySelector('.ant-modal-title')?.textContent,rows:modal.querySelectorAll('tr.ant-table-row').length,buttons:Array.from(modal.querySelectorAll('button')).map(button=>button.textContent.trim()),links:modal.querySelectorAll('a[href]').length,image:modal.querySelector('.qa-version-preview img')?.currentSrc.startsWith('data:image/png;base64,')};})()");
+    assert.equal(desktop.title, "เอกสารทุกเวอร์ชัน"); assert.equal(desktop.rows, 2); assert.equal(desktop.links, 0); assert.equal(desktop.image, true);
+    for (const forbidden of ["ดาวน์โหลด", "ส่งตรวจอนุมัติ", "บันทึกร่าง", "สร้างฉบับแก้ไข", "อนุมัติฉบับ"]) assert.ok(!desktop.buttons.some(label => label.includes(forbidden)));
+    await evaluate('document.querySelector(\'button[aria-label="ดูพรีวิวเวอร์ชัน 000"]\').click()');
+    await until("Boolean(document.querySelector('.ant-modal-body .qa-version-preview img')?.naturalWidth)&&document.querySelector('.ant-modal-body h3')?.textContent.includes('000')");
+    await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    const mobile = await evaluate("(()=>{const modal=document.querySelector('.ant-modal');return {modalWidth:modal.getBoundingClientRect().width,viewport:window.innerWidth,imageWidth:modal.querySelector('.qa-version-preview img').getBoundingClientRect().width,updateButton:document.querySelector('.qa-mobile-documents button[aria-label^=\"อัปเดตฉบับใหม่ของ\"]')?.getBoundingClientRect().width>0};})()");
+    assert.ok(mobile.modalWidth <= mobile.viewport); assert.ok(mobile.imageWidth <= mobile.modalWidth);
+    assert.equal(mobile.updateButton, true);
+    await click("document.querySelector('.ant-modal-footer button')");
+    await rpc("Emulation.setDeviceMetricsOverride", { width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`localStorage.setItem(${JSON.stringify(`e-smart-qa:document-draft:v2:${user.id}`)},JSON.stringify({values:{documentMode:'new',title:'Previously saved draft',description:''},hadAttachment:false}))`);
+    await click(`Array.from(document.querySelectorAll('.qa-desktop-documents button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(`อัปเดตฉบับใหม่ของ ${marker}`)})`);
+    await until("Boolean(document.getElementById('quality-document_effectiveDate'))");
+    assert.equal(await evaluate("document.getElementById('quality-document_effectiveDate').value"), qualityToday());
+    await until(`document.getElementById('quality-document_title')?.value===${JSON.stringify(marker)}`);
+    await until("document.querySelector('.ant-segmented-item-selected')?.textContent==='เวอร์ชันของเอกสารเดิม' && Boolean(document.getElementById('quality-document_documentId'))");
+    assert.equal(await evaluate("document.querySelector('.ant-segmented-item-selected')?.textContent"), "เวอร์ชันของเอกสารเดิม");
+    assert.ok(await evaluate(`document.getElementById('quality-document_documentId').closest('.ant-select').textContent.includes(${JSON.stringify(marker)})`));
+    assert.equal(await evaluate("document.getElementById('document-code-preview').textContent"), marker);
+    const future = qualityToday(new Date(Date.now() + 86400000));
+    await input("quality-document_effectiveDate", future);
+    await attach();
+    await click("document.querySelector('.qa-document-form button[type=submit]')");
+    await until("Array.from(document.querySelectorAll('.ant-alert')).some(alert=>alert.textContent.includes('บันทึกเป็นฉบับร่างรอวันที่กำหนดแล้ว'))");
+    const after = await prisma.docs_qa_documents.findUniqueOrThrow({ where: { id: document.id }, include: { revisions: { orderBy: { id: "desc" } } } });
+    assert.equal(after.current_version, "001"); assert.equal(after.status, "PUBLISHED");
+    assert.equal(after.revisions[0].status, "DRAFT"); assert.equal(after.revisions[0].auto_publish, true);
+    assert.equal(after.revisions[0].effective_date.toISOString().slice(0, 10), future);
+    await until("!document.querySelector('.qa-document-form button[type=submit]').disabled");
+    await select("quality-document_department", marker);
+    await select("quality-document_curriculum", marker);
+    await select("quality-document_level", "(SP)");
+    await input("quality-document_title", `${marker} new`);
+    await input("quality-document_effectiveDate", future);
+    await attach();
+    await click("document.querySelector('.qa-document-form button[type=submit]')");
+    await until("document.querySelector('.qa-document-form .ant-alert')?.textContent.includes('-SP-001')");
+    const created = await prisma.docs_qa_documents.findFirstOrThrow({ where: { department_id: department.id, title: `${marker} new` }, include: { revisions: true } });
+    assert.equal(created.status, "DRAFT"); assert.equal(created.current_version, null);
+    assert.equal(created.revisions[0].effective_date.toISOString().slice(0, 10), future);
+    await rpc("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    assert.ok(await evaluate("document.querySelector('.qa-document-form input[type=date]').getBoundingClientRect().width <= window.innerWidth"));
+  } finally {
+    if (ws?.readyState === WebSocket.OPEN) { if (isolatedBrowser) await rpc("Browser.close", {}, false).catch(() => undefined); ws.close(); }
+    for (const request of inflight.values()) clearTimeout(request.timer);
+    if (department) {
+      const documents = await prisma.docs_qa_documents.findMany({ where: { department_id: department.id }, include: { revisions: true } });
+      await prisma.audit_logs.deleteMany({ where: { entity_type: "QUALITY_DOCUMENT", entity_id: { in: documents.map(document => String(document.id)) } } });
+      await prisma.docs_qa_documents.deleteMany({ where: { department_id: department.id } });
+      for (const document of documents) for (const revision of document.revisions) if (revision.file_path && revision.file_path !== filename) await unlink(revision.file_path).catch(() => undefined);
+    }
+    await unlink(filename).catch(() => undefined);
+    if (program) await prisma.docs_programs.delete({ where: { id: program.id } });
+    if (framework) await prisma.docs_accreditation_frameworks.delete({ where: { id: framework.id } });
+    if (department) await prisma.docs_departments.delete({ where: { id: department.id } });
+    if (user) { await prisma.audit_logs.deleteMany({ where: { actor_id: String(user.id) } }); await prisma.users.delete({ where: { id: user.id } }); }
+    await prisma.$disconnect();
+  }
+});

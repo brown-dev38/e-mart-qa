@@ -5,9 +5,15 @@
 .qa-document-title:hover { color: var(--color-accent); text-decoration: underline; }
 .qa-document-title:focus-visible { border-radius: 3px; outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .qa-document-list .ant-table-cell { vertical-align: top; }
+.qa-document-management-actions { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 8px; width: max-content; flex-shrink: 0; }
+.qa-document-management-actions > .ant-btn { flex: none; }
 .qa-document-list .ant-tabs-nav { margin-bottom: 10px; }
 .qa-mobile-documents { display: none; }
 .qa-mobile-document { padding-block: 14px; border-top: 1px solid var(--color-line); }
+.qa-selected-version > td { background: var(--color-canvas) !important; }
+@media print {
+  .qa-version-preview { display: none !important; }
+}
 @media (max-width: 639px) {
   .qa-desktop-documents { display: none; }
   .qa-mobile-documents { display: block; }

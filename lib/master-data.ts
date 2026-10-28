@@ -266,7 +266,7 @@ export async function saveMasterRecord(
 
       case "sub_departments": {
         const workflow = input.document_workflow == null || input.document_workflow === "" ? null : String(input.document_workflow);
-        if (workflow !== null && !["QA", "CM", "TCH", "ASM", "ADM"].includes(workflow)) throw new InputError("รูปแบบเอกสารไม่ถูกต้อง");
+        if (workflow !== null && !["QAS", "CUR", "TCH", "ASM", "ADM", "STU"].includes(workflow)) throw new InputError("รูปแบบเอกสารไม่ถูกต้อง");
         const departmentId = intValue(
           input.department_id,
           "หน่วยงานหลัก",

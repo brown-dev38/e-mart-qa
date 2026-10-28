@@ -6,6 +6,7 @@ import { auditedChange, mutationEvent } from "@/lib/audit-log";
 import {
   deleteDirectoryDepartment,
   deleteDirectoryPosition,
+  deleteDirectoryUser,
   saveDirectoryDepartment,
   saveDirectoryPosition,
   saveDirectoryUser,
@@ -64,6 +65,14 @@ export async function saveUserAction(
   if (!session?.user?.id) return { ok: false, error: "กรุณาเข้าสู่ระบบก่อนใช้งาน" };
   if (!input || typeof input !== "object" || Array.isArray(input)) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
   const result = await auditedChange(session.user.id, mutationEvent("USER", input), () => saveDirectoryUser(input));
+  if (result.ok) revalidatePath("/");
+  return result;
+}
+
+export async function deleteUserAction(id: number): Promise<SaveResult> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "กรุณาเข้าสู่ระบบก่อนใช้งาน" };
+  const result = await deleteDirectoryUser(id, session.user.id);
   if (result.ok) revalidatePath("/");
   return result;
 }

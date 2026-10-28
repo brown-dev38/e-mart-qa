@@ -1,5 +1,5 @@
 export type DocumentSaveResult =
-  | { ok: true; documentCode: string; documentId: string }
+  | { ok: true; documentCode: string; documentId: string; status?: QualityDocumentStatus; effectiveDate?: string }
   | { ok: false; error: string };
 
 export type QualityDocumentStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
@@ -112,7 +112,10 @@ export type QualityDocumentListItem = {
   title: string;
   status: QualityDocumentStatus;
   current_version: string | null;
+  can_create_revision: boolean;
   scheduled_version: string | null;
+  scheduled_is_draft: boolean;
+  scheduled_effective_date: string | null;
   open_revision_status: RevisionStatus | null;
   open_revision_returned: boolean;
   created_at: string;

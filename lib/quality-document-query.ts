@@ -28,6 +28,7 @@ export async function listQualityDocuments(scope: QualityDocumentScope = {}, act
       created_by: true,
       revisions: { where: { OR: [{ open_slot: 1 }, { status: "APPROVED" }] }, orderBy: { id: "desc" }, select: {
         id: true, status: true, version_label: true, title: true, file_path: true, file_name: true, file_size_bytes: true,
+        auto_publish: true, effective_date: true,
         submissions: { orderBy: { round_no: "desc" }, take: 1, select: { status: true } },
         events: { where: { action: "RETURN" }, take: 1, select: { id: true } },
       } },
@@ -54,13 +55,18 @@ export async function listQualityDocuments(scope: QualityDocumentScope = {}, act
     const approved = row.revisions.find(revision => revision.status === "APPROVED" && revision.version_label === row.current_version);
     const showDraft = row.status === "DRAFT";
     const visibleOpen = actor?.admin || row.created_by === actor?.id;
+    const scheduled = row.revisions.find(revision => revision.status === "APPROVED" && revision.version_label !== row.current_version)
+      ?? (visibleOpen && open?.status === "DRAFT" && open.auto_publish ? open : undefined);
     return ({
     id: row.id.toString(),
     document_code: row.document_code,
     title: showDraft && open ? open.title : row.title,
     status: row.status,
     current_version: row.current_version,
-    scheduled_version: row.revisions.find(revision => revision.status === "APPROVED" && revision.version_label !== row.current_version)?.version_label ?? null,
+    can_create_revision: !!actor && !!visibleOpen && row.status === "PUBLISHED" && row.current_version !== null && !open && !scheduled,
+    scheduled_version: scheduled?.version_label ?? null,
+    scheduled_is_draft: scheduled?.status === "DRAFT",
+    scheduled_effective_date: scheduled?.effective_date?.toISOString().slice(0, 10) ?? null,
     open_revision_status: visibleOpen ? open?.status ?? null : null,
     open_revision_returned: !!(visibleOpen && open?.status === "DRAFT" && (open.submissions[0] ? open.submissions[0].status === "RETURNED" : open.events.length)),
     created_at: row.created_at.toISOString(),

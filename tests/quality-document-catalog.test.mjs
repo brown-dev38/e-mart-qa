@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { buildDocumentPrefix, readDocumentDraft } from "../lib/quality-document-catalog.ts";
+import test, { after } from "node:test";
+import { registerHooks } from "node:module";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+const hook = registerHooks({ resolve(specifier, context, next) {
+  if (specifier.startsWith(".") && context.parentURL) {
+    const url = new URL(specifier, context.parentURL);
+    if (!url.pathname.split("/").pop().includes(".") && existsSync(fileURLToPath(url) + ".ts")) return next(url.href + ".ts", context);
+  }
+  return next(specifier, context);
+} });
+const { buildDocumentPrefix, readDocumentDraft } = await import("../lib/quality-document-catalog.ts");
+after(() => hook.deregister());
 
 const catalog = {
   departments: [
@@ -42,4 +53,12 @@ test("restoring a saved SP draft clears its previous criterion while preserving 
   assert.equal(sp.values.level, "SP");
   assert.equal(sp.hadAttachment, true);
   assert.equal(restore("WI").values.criterion, "W1.1.1");
+});
+
+test("saved form drafts preserve the effective date and the selected existing document", () => {
+  const restore = effectiveDate => readDocumentDraft(JSON.stringify({ values: { ...values, documentMode: "revision", documentId: "42", effectiveDate } }), catalog).values;
+  assert.equal(restore("2030-01-01").effectiveDate, "2030-01-01");
+  assert.equal(restore("2030-01-01").documentMode, "revision");
+  assert.equal(restore("2030-01-01").documentId, "42");
+  assert.equal(restore("2030-02-30").effectiveDate, undefined);
 });

@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { listQualityDocuments } from "@/lib/quality-document-query";
 import { saveQualityDocument } from "@/lib/quality-document-save";
 import { qualityActor } from "@/lib/quality-document-workflow";
+import { qualityRevisionTargets } from "@/lib/quality-document-schedule";
+import { revalidatePath } from "next/cache";
 import type {
   DocumentSaveResult,
   QualityDocumentListResult,
@@ -19,10 +21,19 @@ export async function saveQualityDocumentAction(
   }
 
   try {
-    return await saveQualityDocument(formData, session.user.id);
+    const result = await saveQualityDocument(formData, session.user.id);
+    if (result.ok) revalidatePath("/");
+    return result;
   } catch {
     return { ok: false, error: "บันทึกเอกสารไม่สำเร็จ กรุณาตรวจสอบบัญชีแล้วลองใหม่" };
   }
+}
+
+export async function listQualityRevisionTargetsAction() {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false as const, error: "กรุณาเข้าสู่ระบบก่อนเพิ่มเวอร์ชัน" };
+  try { return { ok: true as const, documents: await qualityRevisionTargets(session.user.id) }; }
+  catch { return { ok: false as const, error: "โหลดรายการเอกสารเดิมไม่สำเร็จ กรุณาลองใหม่" }; }
 }
 
 export async function listQualityDocumentsAction(

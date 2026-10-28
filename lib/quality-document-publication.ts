@@ -2,10 +2,9 @@ import type { Prisma, docs_qa_documents } from "@prisma/client";
 import { prisma } from "./prisma";
 import { revisionFileUrl } from "./quality-document-files";
 import { writeAudit } from "./audit-log";
+import { qualityToday } from "./quality-effective-date";
+export { qualityToday } from "./quality-effective-date";
 
-export function qualityToday(now = new Date()): string {
-  return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
 
 export function nextQualityRevision(lastApproved: number | null): number {
   return lastApproved === null ? 0 : lastApproved + 1;
@@ -15,14 +14,21 @@ export function nextQualityRevision(lastApproved: number | null): number {
 // replace the current file until their effective date in Asia/Bangkok.
 export async function activateQualityPublication(tx: Prisma.TransactionClient, doc: docs_qa_documents) {
   if (doc.deleted_at || doc.status === "ARCHIVED") return doc;
+  const today = new Date(`${qualityToday()}T00:00:00Z`);
   const due = await tx.docs_qa_document_revisions.findFirst({
-    where: { document_id: doc.id, status: "APPROVED", OR: [
-      { effective_date: { lte: new Date(`${qualityToday()}T00:00:00Z`) } },
-      { effective_date: null },
+    where: { document_id: doc.id, OR: [
+      { status: "APPROVED", OR: [{ effective_date: { lte: today } }, { effective_date: null }] },
+      { status: "DRAFT", auto_publish: true, effective_date: { lte: today }, file_path: { not: null } },
     ] }, orderBy: { revision_number: "desc" },
   });
   if (!due || due.version_label === doc.current_version) return doc;
   const now = new Date();
+  if (due.status === "DRAFT") {
+    await tx.docs_qa_document_revisions.update({ where: { id: due.id }, data: {
+      status: "APPROVED", open_slot: null, approved_by: "SYSTEM", approved_name: "ระบบ", approved_at: now,
+      lock_version: { increment: 1 },
+    } });
+  }
   await tx.docs_qa_document_revisions.updateMany({
     where: { document_id: doc.id, status: "APPROVED", revision_number: { lt: due.revision_number ?? 0 } },
     data: { status: "SUPERSEDED", superseded_at: now, superseded_by_version: due.version_label },
@@ -30,13 +36,15 @@ export async function activateQualityPublication(tx: Prisma.TransactionClient, d
   const updated = await tx.docs_qa_documents.update({ where: { id: doc.id }, data: {
     title: due.title, description: due.description, current_version: due.version_label,
     status: "PUBLISHED", effective_date: due.effective_date,
+    approved_revision_no: Math.max(doc.approved_revision_no ?? -1, due.revision_number ?? 0),
+    registry_version: { increment: 1 },
     file_path: revisionFileUrl(due.id), file_name: due.file_name,
     file_mime_type: due.file_mime_type, file_size_bytes: due.file_size_bytes,
   } });
   await tx.docs_qa_review_events.create({ data: { revision_id: due.id, action: "EFFECTIVE", actor_id: "SYSTEM", actor_name: "ระบบ", comment: `มีผลใช้ฉบับ ${due.version_label}` } });
   await writeAudit(tx, { id: "", name: "ระบบ" }, {
     action: "EFFECTIVE", entityType: "QUALITY_DOCUMENT", entityId: String(doc.id), entityLabel: doc.document_code,
-    summary: `มีผลใช้ฉบับ ${due.version_label}`, details: { version: due.version_label, previousVersion: doc.current_version },
+    summary: `มีผลใช้ฉบับ ${due.version_label}`, details: { version: due.version_label, previousVersion: doc.current_version, automatic: due.auto_publish },
   });
   return updated;
 }
@@ -44,10 +52,14 @@ export async function activateQualityPublication(tx: Prisma.TransactionClient, d
 // Activation is idempotent and is also run on reads, so a scheduled revision
 // becomes current even when no operator is logged in at midnight.
 export async function refreshQualityPublications(documentId?: bigint) {
+  const today = new Date(`${qualityToday()}T00:00:00Z`);
   const due = await prisma.docs_qa_document_revisions.findMany({
-    where: { status: "APPROVED", ...(documentId ? { document_id: documentId } : {}),
+    where: { ...(documentId ? { document_id: documentId } : {}),
       document: { deleted_at: null, status: { not: "ARCHIVED" } },
-      OR: [{ effective_date: { lte: new Date(`${qualityToday()}T00:00:00Z`) } }, { effective_date: null }],
+      OR: [
+        { status: "APPROVED", OR: [{ effective_date: { lte: today } }, { effective_date: null }] },
+        { status: "DRAFT", auto_publish: true, effective_date: { lte: today }, file_path: { not: null } },
+      ],
     }, select: { document_id: true, version_label: true, document: { select: { current_version: true } } },
   });
   const ids = new Set(due.filter(row => row.version_label !== row.document.current_version).map(row => row.document_id));

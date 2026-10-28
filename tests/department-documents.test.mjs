@@ -16,7 +16,7 @@ function masterData() {
     ],
     sub_departments: [
       { id: 1, department_id: 1, code: "TCH", name_th: "การสอน", is_active: true },
-      { id: 2, department_id: 1, code: "CUSTOM-QA", name_th: "ประกันคุณภาพ", is_active: true, document_workflow: "QA" },
+      { id: 2, department_id: 1, code: "CUSTOM-QA", name_th: "ประกันคุณภาพ", is_active: true, document_workflow: "QAS" },
       { id: 3, department_id: 1, code: "OFF", name_th: "งานปิดแล้ว", is_active: false },
       { id: 4, department_id: 3, code: "QA", name_th: "อยู่ในหน่วยงานปิด", is_active: true },
       { id: 5, department_id: 4, code: "QA", name_th: "รหัสซ้ำต่างหน่วยงาน", is_active: true },
@@ -54,7 +54,7 @@ test("includes new work types, excludes inactive parents and children, and disti
   assert.deepEqual(workTypes.filter(({ subDepartmentCode }) => subDepartmentCode === "QA" || subDepartmentCode === "CUSTOM-QA")
     .map(({ departmentCode }) => departmentCode), ["EDU", "OTHER"]);
   assert.equal(workTypes.find(({ value }) => value === "department:2").subDepartmentCode, null);
-  assert.equal(workTypes.find(({ value }) => value === "sub-department:2").workflow, "QA");
+  assert.equal(workTypes.find(({ value }) => value === "sub-department:2").workflow, "QAS");
 });
 
 test("migrates saved selections to database codes and clears selections removed by an administrator", () => {

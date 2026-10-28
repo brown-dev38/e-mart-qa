@@ -4,6 +4,10 @@ import { qualityActor } from "./quality-document-workflow";
 import { writeAudit } from "./audit-log";
 import type { DocumentSaveResult } from "@/types/quality-document";
 import { requiresDocumentCriterion } from "./quality-document-catalog";
+import { effectiveDateError } from "./quality-effective-date";
+import { activateQualityPublication } from "./quality-document-publication";
+import { saveScheduledQualityRevision } from "./quality-document-schedule";
+import { ActionError } from "./current-actor";
 
 function field(formData: FormData, name: string): string {
   const value = formData.get(name);
@@ -17,6 +21,12 @@ export async function saveQualityDocument(
   userId: string,
 ): Promise<DocumentSaveResult> {
   await qualityActor(userId);
+  if (formData.has("documentId")) return saveScheduledQualityRevision(formData, userId);
+  const effectiveDate = formData.has("effectiveDate") ? field(formData, "effectiveDate") : null;
+  if (effectiveDate !== null) {
+    const error = effectiveDateError(effectiveDate);
+    if (error) return { ok: false, error };
+  }
   const departmentCode = field(formData, "department").toUpperCase();
   const jobCode = field(formData, "job").toUpperCase();
   const programCode = field(formData, "program").toUpperCase();
@@ -101,9 +111,10 @@ export async function saveQualityDocument(
   ].join("-");
 
   let fileData: Awaited<ReturnType<typeof storeQualityFile>> = null;
-  let saved: { documentCode: string; documentId: string };
+  let saved: { documentCode: string; documentId: string; status: "DRAFT" | "PUBLISHED" | "ARCHIVED" };
   try {
     fileData = await storeQualityFile(formData.get("file"));
+    if (effectiveDate && !fileData) throw new ActionError("กรุณาแนบไฟล์เอกสารสำหรับวันที่มีผลใช้บังคับที่กำหนด");
     saved = await prisma.$transaction(async tx => {
       // Lock a stable parent even when this group has no documents yet.
       // Read Committed ensures a waiting request sees the previous allocation.
@@ -154,7 +165,8 @@ export async function saveQualityDocument(
           status: "DRAFT",
           created_by: userId,
           revisions: { create: {
-            version_label: "DRAFT", status: "DRAFT", open_slot: 1,
+            version_label: effectiveDate ? "000" : "DRAFT", status: "DRAFT", open_slot: 1,
+            ...(effectiveDate ? { auto_publish: true, revision_number: 0, effective_date: new Date(`${effectiveDate}T00:00:00Z`) } : {}),
             title, description: description || null, uploaded_by: userId,
             ...fileData,
             events: { create: { action: "CREATE", actor_id: actor.id, actor_name: actor.name } },
@@ -163,13 +175,14 @@ export async function saveQualityDocument(
       });
       await writeAudit(tx, actor, {
         action: "CREATE", entityType: "QUALITY_DOCUMENT", entityId: String(created.id),
-        entityLabel: allocatedCode, summary: `เพิ่มเอกสารคุณภาพ: ${title}`, details: { title, version: "000" },
+        entityLabel: allocatedCode, summary: `เพิ่มเอกสารคุณภาพ: ${title}`, details: { title, version: "000", ...(effectiveDate ? { effectiveDate, automatic: true } : {}) },
       });
-      return { documentCode: allocatedCode, documentId: String(created.id) };
+      const published = effectiveDate ? await activateQualityPublication(tx, created) : created;
+      return { documentCode: allocatedCode, documentId: String(created.id), status: published.status };
     }, { isolationLevel: "ReadCommitted" });
   } catch (error) {
     if (fileData) await removeQualityFile(fileData.file_path);
-    if (error instanceof SequenceExhausted) return { ok: false, error: error.message };
+    if (error instanceof SequenceExhausted || error instanceof ActionError) return { ok: false, error: error.message };
     if ((error as { code?: string }).code === "P2002") {
       return {
         ok: false,
@@ -181,5 +194,5 @@ export async function saveQualityDocument(
     return { ok: false, error: "บันทึกเอกสารไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
   }
 
-  return { ok: true, ...saved };
+  return { ok: true, ...saved, ...(effectiveDate ? { effectiveDate } : {}) };
 }

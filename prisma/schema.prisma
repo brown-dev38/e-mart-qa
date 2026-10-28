@@ -264,6 +264,7 @@ model docs_qa_document_revisions {
   title           String               @db.VarChar(500)
   description     String?              @db.Text
   status          docs_revision_status @default(DRAFT)
+  auto_publish    Boolean              @default(false)
   revision_number Int?                 @db.UnsignedSmallInt
   open_slot       Int?                 @db.UnsignedTinyInt
   lock_version    Int                  @default(0) @db.UnsignedInt
@@ -292,6 +293,7 @@ model docs_qa_document_revisions {
   @@unique([document_id, revision_number])
   @@index([document_id])
   @@index([status, submitted_at])
+  @@index([auto_publish, status, effective_date], map: "qa_revision_auto_effective_idx")
 }
 
 enum docs_revision_status {
@@ -374,11 +376,12 @@ enum docs_submission_status {
 }
 
 enum docs_document_workflow {
-  QA
-  CM
+  QAS
+  CUR
   TCH
   ASM
   ADM
+  STU
 }
 
 model docs_academic_years {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { prisma } from "./lib/prisma";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -14,18 +15,30 @@ export async function proxy(request: NextRequest) {
   }
   if (pathname !== "/" && pathname !== "/login") return NextResponse.next();
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-
-  if (pathname === "/" && !token) {
-    const url = new URL("/login", request.url);
-    url.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(url);
+  const userId = typeof token?.uid === "string" && /^[1-9]\d{0,9}$/.test(token.uid) && Number(token.uid) <= 2_147_483_647
+    ? Number(token.uid) : null;
+  const user = userId === null ? null : await prisma.users.findUnique({ where: { id: userId }, select: { is_active: true } });
+  const authenticated = user?.is_active === true;
+  function clearInvalidSession(response: NextResponse) {
+    if (token && !authenticated) {
+      for (const { name } of request.cookies.getAll()) {
+        if (/^(?:__Secure-)?next-auth\.session-token(?:\.\d+)?$/.test(name)) response.cookies.delete(name);
+      }
+    }
+    return response;
   }
 
-  if (pathname === "/login" && token) {
+  if (pathname === "/" && !authenticated) {
+    const url = new URL("/login", request.url);
+    url.searchParams.set("callbackUrl", pathname);
+    return clearInvalidSession(NextResponse.redirect(url));
+  }
+
+  if (pathname === "/login" && authenticated) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  return NextResponse.next();
+  return clearInvalidSession(NextResponse.next());
 }
 
 export const config = {

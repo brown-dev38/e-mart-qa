@@ -25,8 +25,6 @@ import {
   ChevronDown,
   FilePlus2,
   Files,
-  FileCheck2,
-  Trash2,
   History,
   FolderOpen,
   LayoutDashboard,
@@ -40,9 +38,6 @@ import { readDepartmentSelection } from "@/lib/department-documents";
 import type { DepartmentDocumentCatalog, DepartmentSelection } from "@/types/department-documents";
 import QualityDocumentForm from "./quality-document-form";
 import QualityDocumentList from "./quality-document-list";
-import QualityDocumentApprovals from "./quality-document-approvals";
-import QualityDocumentReviewInbox from "./quality-document-review-inbox";
-import QualityDocumentDeletion from "./admin/quality-document-deletion";
 import AuditLog from "./admin/audit-log";
 import AdminSettings from "./admin/admin-settings";
 import SettingsOverview from "./admin/settings-overview";
@@ -61,36 +56,12 @@ import "./dashboard.css";
 
 const documentPages = [
   {
-    id: "documents-review",
-    title: "ติดตามการตรวจและแก้ไข",
-    description: "ติดตามผลตรวจ อ่านข้อเสนอแนะ และแก้ไขเอกสารเพื่อส่งตรวจซ้ำ",
-    icon: History,
-    path: ["การจัดเอกสารคุณภาพ", "ติดตามการตรวจและแก้ไข"],
-    parents: ["documents"],
-  },
-  {
-    id: "documents-delete",
-    title: "ลบเอกสารคุณภาพ",
-    description: "นำเอกสารออกจากรายการใช้งาน พร้อมเก็บเหตุผลและประวัติสำหรับตรวจสอบ",
-    icon: Trash2,
-    path: ["การจัดเอกสารคุณภาพ", "ลบเอกสารคุณภาพ"],
-    parents: ["documents"],
-  },
-  {
     id: "audit-log",
     title: "Audit log · ประวัติการทำงาน",
     description: "ตรวจสอบผู้ดำเนินการ รายการที่เปลี่ยนแปลง เวลา และผลการทำงานของระบบ",
     icon: History,
     path: ["ตรวจสอบระบบ", "Audit log"],
     parents: [],
-  },
-  {
-    id: "documents-approvals",
-    title: "ตรวจสอบอนุมัติ",
-    description: "ตรวจสอบเอกสาร ส่งกลับแก้ไข และอนุมัติฉบับที่มีผลใช้งาน",
-    icon: FileCheck2,
-    path: ["การจัดเอกสารคุณภาพ", "ตรวจสอบอนุมัติ"],
-    parents: ["documents"],
   },
   {
     id: "documents-create",
@@ -178,8 +149,6 @@ function readNavigation(
           page.id === migratedSection &&
           (canManage ||
             (!page.id.startsWith("settings-") &&
-              page.id !== "documents-approvals" &&
-              page.id !== "documents-delete" &&
               page.id !== "audit-log" &&
               !page.id.startsWith("directory-"))),
       );
@@ -238,20 +207,6 @@ function buildNavigationItems(
               icon: <Files size={16} aria-hidden="true" />,
               label: "เอกสารคุณภาพทั้งหมด",
             },
-            {
-              key: "documents-review",
-              icon: <History size={16} aria-hidden="true" />,
-              label: "ติดตามการตรวจและแก้ไข",
-            },
-            ...(canManage ? [{
-              key: "documents-approvals",
-              icon: <FileCheck2 size={16} aria-hidden="true" />,
-              label: "ตรวจสอบอนุมัติ",
-            }, {
-              key: "documents-delete",
-              icon: <Trash2 size={16} aria-hidden="true" />,
-              label: "ลบเอกสารคุณภาพ",
-            }] : []),
             {
               key: "documents-departments",
               icon: <Building2 size={16} aria-hidden="true" />,
@@ -572,6 +527,7 @@ export default function Dashboard({
   const [navigation, setNavigation] =
     useState<NavigationState>(defaultNavigation);
   const [restoredKey, setRestoredKey] = useState<string | null>(null);
+  const [revisionDocumentId, setRevisionDocumentId] = useState<string | null>(null);
   const { section, openKeys } = navigation;
   const [menuOpen, setMenuOpen] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -626,6 +582,7 @@ export default function Dashboard({
   }, [menuOpen]);
 
   function navigate(next: Section) {
+    setRevisionDocumentId(null);
     if (section === "documents-create" && next !== "documents-create") {
       clearDocumentDraft(userId);
     }
@@ -794,13 +751,13 @@ export default function Dashboard({
           )}
 
           {section === "documents-create" && (
-            <QualityDocumentForm userId={userId} catalog={documentCatalog} />
+            <QualityDocumentForm key={revisionDocumentId ?? "new"} userId={userId} catalog={documentCatalog} initialDocumentId={revisionDocumentId ?? undefined} />
           )}
 
-          {section === "documents-all" && <QualityDocumentList />}
-          {section === "documents-review" && <QualityDocumentReviewInbox />}
-          {canManage && section === "documents-approvals" && <QualityDocumentApprovals />}
-          {canManage && section === "documents-delete" && <QualityDocumentDeletion />}
+          {section === "documents-all" && <QualityDocumentList canDelete={canManage} onUpdateRevision={documentId => {
+            navigate("documents-create");
+            setRevisionDocumentId(documentId);
+          }} />}
           {canManage && section === "audit-log" && <AuditLog />}
 
           {canManage && settings && section === "settings-overview" && (
@@ -820,6 +777,7 @@ export default function Dashboard({
             <UserAdmin
               section={section as DirectorySection}
               data={userDirectory}
+              currentUserId={userId}
             />
           )}
 
@@ -827,9 +785,6 @@ export default function Dashboard({
             section !== "documents-departments" &&
             section !== "documents-create" &&
             section !== "documents-all" &&
-            section !== "documents-review" &&
-            section !== "documents-approvals" &&
-            section !== "documents-delete" &&
             section !== "audit-log" &&
             !section.startsWith("settings-") &&
             !section.startsWith("directory-") && (

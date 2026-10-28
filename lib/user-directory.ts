@@ -1,5 +1,7 @@
 import bcrypt from "bcrypt";
 import { prisma } from "@/lib/prisma";
+import { ActionError, currentActor } from "./current-actor";
+import { writeAudit } from "./audit-log";
 import type {
   DirectoryRecordInput,
   SaveResult,
@@ -77,7 +79,7 @@ function boolValue(value: unknown, fallback = true): boolean {
 }
 
 function friendlyError(error: unknown): string {
-  if (error instanceof InputError) return error.message;
+  if (error instanceof InputError || error instanceof ActionError) return error.message;
   const code = (error as { code?: string }).code;
   if (code === "P2002") {
     return "ข้อมูลนี้ถูกใช้งานแล้ว กรุณาตรวจสอบชื่อผู้ใช้หรืออีเมล";
@@ -134,6 +136,35 @@ export async function loadUserDirectory(): Promise<UserDirectoryData> {
       position_name: item.position?.name ?? null,
     })),
   };
+}
+
+export async function deleteDirectoryUser(rawId: unknown, userId: string): Promise<SaveResult> {
+  try {
+    if (typeof rawId !== "number" || !Number.isSafeInteger(rawId) || rawId < 1 || rawId > 2_147_483_647) {
+      throw new InputError("รหัสผู้ใช้ไม่ถูกต้อง");
+    }
+    const id = rawId;
+    if (typeof userId !== "string" || !/^[1-9]\d{0,9}$/.test(userId) || Number(userId) > 2_147_483_647) {
+      throw new InputError("กรุณาเข้าสู่ระบบอีกครั้ง");
+    }
+    await prisma.$transaction(async (tx) => {
+      // Lock both accounts in a fixed order so concurrent admin deletions cannot remove each other.
+      await tx.$queryRaw`SELECT id FROM users WHERE id IN (${Number(userId)}, ${id}) ORDER BY id FOR UPDATE`;
+      const actor = await currentActor(userId, tx);
+      if (!actor.admin) throw new InputError("เฉพาะผู้ดูแลระบบเท่านั้นที่ลบผู้ใช้งานได้");
+      if (actor.id === String(id)) throw new InputError("ไม่สามารถลบบัญชีของตนเองได้");
+      const user = await tx.users.findUnique({ where: { id }, select: { username: true } });
+      if (!user) throw new InputError("ไม่พบผู้ใช้งาน หรือบัญชีถูกลบไปแล้ว");
+      await tx.users.delete({ where: { id } });
+      await writeAudit(tx, actor, {
+        action: "DELETE", entityType: "USER", entityId: String(id), entityLabel: user.username,
+        summary: `ลบผู้ใช้งาน: ${user.username}`, details: { username: user.username },
+      });
+    }, { isolationLevel: "ReadCommitted" });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: friendlyError(error) };
+  }
 }
 
 export async function saveDirectoryDepartment(

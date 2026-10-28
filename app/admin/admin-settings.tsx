@@ -141,11 +141,12 @@ function buildCriteriaTree(criteria: QaCriterion[]): Row[] {
 
 function buildConfig(entity: MasterEntity, data: MasterData): EntityConfig {
   const workflowOptions: Option[] = [
-    { value: "QA", label: "งานประกันคุณภาพ (SAR / APR / CAR)" },
-    { value: "CM", label: "งานบริหารหลักสูตร" },
+    { value: "QAS", label: "งานประกันคุณภาพ (SAR / APR / CAR)" },
+    { value: "CUR", label: "งานบริหารหลักสูตร" },
     { value: "TCH", label: "งานจัดการเรียนการสอน" },
     { value: "ASM", label: "งานวัดและประเมินผล" },
     { value: "ADM", label: "งานรับเข้า" },
+    { value: "STU", label: "งานนิสิต" },
   ];
   const activeField: FieldConfig = { key: "is_active", label: "เปิดใช้งาน", type: "switch" };
   const programField: FieldConfig = {

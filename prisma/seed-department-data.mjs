@@ -11,11 +11,18 @@ export async function seedDepartmentData(prisma) {
   }
   const department = await prisma.docs_departments.findUnique({ where: { code: "EDU" } });
   if (department) {
-    for (const [code, name_th, sort_order] of [["QA", "งานประกันคุณภาพ", 5], ["CM", "งานบริหารหลักสูตร", 6]]) {
+    for (const [code, name_th, sort_order, workflow] of [
+      ["QAS", "งานประกันคุณภาพ", 5, "QAS"],
+      ["CUR", "งานบริหารหลักสูตร", 6, "CUR"],
+    ]) {
       const existing = await prisma.docs_sub_departments.findFirst({ where: { department_id: department.id, OR: [{ code }, { name_th }] } });
-      if (!existing) await prisma.docs_sub_departments.create({ data: {
+      const document_workflow = /** @type {'QAS' | 'CUR'} */ (workflow);
+      if (existing) await prisma.docs_sub_departments.update({
+        where: { id: existing.id }, data: { document_workflow },
+      });
+      else await prisma.docs_sub_departments.create({ data: {
         department_id: department.id, code, name_th, sort_order,
-        document_workflow: /** @type {'QA' | 'CM'} */ (code),
+        document_workflow,
       } });
     }
   }

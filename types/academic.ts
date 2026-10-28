@@ -1,4 +1,4 @@
-export type DocumentWorkflow = "QA" | "CM" | "TCH" | "ASM" | "ADM";
+export type DocumentWorkflow = "QAS" | "CUR" | "TCH" | "ASM" | "ADM" | "STU";
 
 export const ACADEMIC_ENTITIES = [
   "academic_years", "semesters", "study_years", "curriculum_versions", "courses", "course_offerings",

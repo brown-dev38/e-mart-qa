@@ -15,7 +15,13 @@ const nextConfig: NextConfig = {
   },
   cacheComponents: true,
   partialPrefetching: true,
-  serverExternalPackages: ["@prisma/client", "bcrypt", "mariadb"],
+  serverExternalPackages: ["@prisma/client", "bcrypt", "mariadb", "pdfjs-dist", "@napi-rs/canvas", "word-extractor", "xlsx"],
+  outputFileTracingIncludes: {
+    "/api/quality-documents/revisions/*/preview": [
+      "./node_modules/pdfjs-dist/cmaps/**/*", "./node_modules/pdfjs-dist/standard_fonts/**/*",
+      "./node_modules/pdfjs-dist/wasm/**/*", "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+    ],
+  },
   turbopack: {
     rules: {
       "*.css": {

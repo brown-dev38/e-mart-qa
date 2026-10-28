@@ -32,8 +32,8 @@ test("database scopes, document types, file lifecycle, and master data validatio
     const studyYear = await prisma.docs_study_years.findUniqueOrThrow({ where: { year: 1 } });
     const version = await prisma.docs_curriculum_versions.findUniqueOrThrow({ where: { program_id_year: { program_id: md.id, year: 2565 } } });
     const jobs = {};
-    for (const workflow of ["QA", "CM", "TCH", "ASM", "ADM"]) jobs[workflow] = (await prisma.docs_sub_departments.findFirstOrThrow({ where: { document_workflow: workflow, department: { code: "EDU" } } })).code;
-    const base = { departmentCode: "EDU", programCode: "M.D.", subDepartmentCode: jobs.QA, academicYearId: year.id };
+    for (const workflow of ["QAS", "CUR", "TCH", "ASM", "ADM", "STU"]) jobs[workflow] = (await prisma.docs_sub_departments.findFirstOrThrow({ where: { document_workflow: workflow, department: { code: "EDU" } } })).code;
+    const base = { departmentCode: "EDU", programCode: "M.D.", subDepartmentCode: jobs.QAS, academicYearId: year.id };
     const course = await prisma.docs_courses.create({ data: { program_id: md.id, code: marker.slice(0, 30), name_th: marker } });
     courseId = course.id;
     const offering = await prisma.docs_course_offerings.create({ data: { course_id: courseId, academic_year_id: year.id, semester_id: semester.id, study_year_id: studyYear.id } });
@@ -49,7 +49,7 @@ test("database scopes, document types, file lifecycle, and master data validatio
     for (const [scope, type] of [
       [base, "SAR"], [base, "ACCREDITATION"], [base, "APR"], [base, "APR_RESULT"],
       [{ ...base, programCode: "B.PMD." }, "CAR"],
-      [{ departmentCode: "EDU", programCode: "M.D.", subDepartmentCode: jobs.CM, curriculumVersionId: version.id }, "CURRICULUM"],
+      [{ departmentCode: "EDU", programCode: "M.D.", subDepartmentCode: jobs.CUR, curriculumVersionId: version.id }, "CURRICULUM"],
       [teaching, "TQF3"], [teaching, "TQF5"], [teaching, "EVALUATION"],
       [{ ...teaching, subDepartmentCode: jobs.ASM }, "STUDY_RESULT"],
       [{ ...base, subDepartmentCode: jobs.ADM }, "ADMISSION_ANNOUNCEMENT"],
@@ -61,12 +61,12 @@ test("database scopes, document types, file lifecycle, and master data validatio
       assert.ok(listed.documents.some((document) => document.title === marker && document.documentType === type));
     }
     assert.equal((await saveWorkDocument(createForm(base, "CAR"), marker)).ok, false);
-    const qaJob = await prisma.docs_sub_departments.findFirstOrThrow({ where: { code: jobs.QA, department: { code: "EDU" } } });
-    assert.equal((await saveMasterRecord("sub_departments", { ...qaJob, document_workflow: "CM" })).ok, false);
+    const qaJob = await prisma.docs_sub_departments.findFirstOrThrow({ where: { code: jobs.QAS, department: { code: "EDU" } } });
+    assert.equal((await saveMasterRecord("sub_departments", { ...qaJob, document_workflow: "CUR" })).ok, false);
     assert.equal((await saveWorkDocument(createForm({ ...base, programCode: "B.PMD." }, "APR"), marker)).ok, false);
     assert.equal((await saveWorkDocument(createForm(teaching, "TQF3", "invalid.exe"), marker)).ok, false);
     await assert.rejects(resolveWorkScope({ ...teaching, programCode: "B.PMD." }));
-    await assert.rejects(resolveWorkScope({ departmentCode: "EDU", programCode: "B.PMD.", subDepartmentCode: jobs.CM, curriculumVersionId: version.id }));
+    await assert.rejects(resolveWorkScope({ departmentCode: "EDU", programCode: "B.PMD.", subDepartmentCode: jobs.CUR, curriculumVersionId: version.id }));
     await assert.rejects(resolveWorkScope({ ...base, academicYearId: undefined }));
     await assert.rejects(resolveWorkScope({ ...base, courseOfferingId: offering.id }));
     const mdDocs = await listWorkDocuments(base, marker, false);

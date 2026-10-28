@@ -1,16 +1,18 @@
 "use client";
 
-import { startTransition, useEffect, useState, useTransition } from "react";
-import { Alert, Button, Card, Descriptions, Form, Input, Modal, Popover, Select, Upload, type UploadFile } from "antd";
+import { startTransition, useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { Alert, Button, Card, Descriptions, Form, Input, Modal, Popover, Segmented, Select, Upload, type UploadFile } from "antd";
 import { Copy, Eye, FileText, Info, Paperclip, RotateCcw, Save, Trash2, UploadCloud } from "lucide-react";
 import toast from "react-hot-toast";
 import { buildDocumentPrefix, EMPTY_DOCUMENT, isValidCriterion, readDocumentDraft, requiresDocumentCriterion, type DocumentCatalog, type DocumentFormValues } from "@/lib/quality-document-catalog";
 import { documentDraftKey } from "@/lib/quality-document-draft";
-import { saveQualityDocumentAction } from "./documents/actions";
-import QualityDocumentWorkflow from "./quality-document-workflow";
+import { listQualityRevisionTargetsAction, saveQualityDocumentAction } from "./documents/actions";
+import QualityDocumentVersions from "./quality-document-versions";
+import { effectiveDateError, qualityToday } from "@/lib/quality-effective-date";
+import type { QualityRevisionTarget } from "@/types/quality-document-schedule";
 import "./quality-document-form.css";
 
-export default function QualityDocumentForm({ userId, catalog }: { userId: string; catalog: DocumentCatalog }) {
+export default function QualityDocumentForm({ userId, catalog, initialDocumentId }: { userId: string; catalog: DocumentCatalog; initialDocumentId?: string }) {
   const [form] = Form.useForm<DocumentFormValues>();
   const values = (Form.useWatch([], { form, preserve: true }) ?? EMPTY_DOCUMENT) as DocumentFormValues;
   const [files, setFiles] = useState<UploadFile[]>([]);
@@ -20,7 +22,13 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
   const [saving, startSaving] = useTransition();
   const [savedCode, setSavedCode] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [savedStatus, setSavedStatus] = useState("DRAFT");
+  const [savedDate, setSavedDate] = useState("");
+  const [targets, setTargets] = useState<QualityRevisionTarget[]>([]);
+  const [targetsError, setTargetsError] = useState<string | null>(null);
+  const [loadingTargets, startLoadingTargets] = useTransition();
   const [openedDocument, setOpenedDocument] = useState<string | null>(null);
+  const initializedRevision = useRef(false);
   const draftKey = documentDraftKey(userId);
   const department = catalog.departments.find(item => item.value === values.department);
   const jobOptions = values.department ? catalog.subDepartments[values.department] ?? [] : [];
@@ -28,19 +36,43 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
   const framework = curriculum?.framework;
   const needsCriterion = requiresDocumentCriterion(values.level);
   const prefix = buildDocumentPrefix(values, catalog);
-  const code = prefix ? `${prefix}-XXX` : null;
+  const revisionMode = values.documentMode === "revision";
+  const target = targets.find(document => document.id === values.documentId);
+  const code = revisionMode ? target?.code ?? null : prefix ? `${prefix}-XXX` : null;
   const isManagement = department ? !department.hasSubDepartment : false;
 
   useEffect(() => {
+    if (initialDocumentId) return;
     try {
       const draft = readDocumentDraft(localStorage.getItem(draftKey), catalog);
       if (draft) startTransition(() => {
-        form.setFieldsValue(draft.values);
+        form.setFieldsValue({ ...draft.values, effectiveDate: draft.values.effectiveDate ?? qualityToday() });
         setRestored(true);
         setNeedsAttachment(draft.hadAttachment);
       });
     } catch { /* The form also works without browser storage. */ }
-  }, [draftKey, form, catalog]);
+  }, [draftKey, form, catalog, initialDocumentId]);
+
+  const loadTargets = useCallback(() => startLoadingTargets(async () => {
+    try {
+      const result = await listQualityRevisionTargetsAction();
+      if (result.ok) {
+        setTargets(result.documents); setTargetsError(null);
+        if (initialDocumentId && !initializedRevision.current) {
+          const selected = result.documents.find(document => document.id === initialDocumentId);
+          if (selected) {
+            form.setFieldsValue({ ...selected, documentMode: "revision", documentId: selected.id, effectiveDate: qualityToday() });
+            initializedRevision.current = true;
+          } else {
+            form.setFieldsValue({ documentMode: "revision", documentId: initialDocumentId });
+            setTargetsError("เอกสารนี้ไม่พร้อมเพิ่มฉบับใหม่ อาจมีฉบับร่างหรือฉบับรอมีผลใช้อยู่แล้ว กรุณารีเฟรชรายการเอกสาร");
+          }
+        }
+      }
+      else setTargetsError(result.error);
+    } catch { setTargetsError("โหลดรายการเอกสารเดิมไม่สำเร็จ"); }
+  }), [form, initialDocumentId]);
+  useEffect(loadTargets, [loadTargets]);
 
   function saveDraft() {
     try {
@@ -61,21 +93,25 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
   function saveDocument() {
     const current = form.getFieldsValue(true) as DocumentFormValues;
     const payload = new FormData();
-    for (const [key, value] of Object.entries({ department: current.department, job: current.job, program: current.curriculum, level: current.level, criterion: requiresDocumentCriterion(current.level) ? current.criterion : undefined, title: current.title, description: current.description })) payload.set(key, value ?? "");
+    for (const [key, value] of Object.entries({ department: current.department, job: current.job, program: current.curriculum, level: current.level, criterion: requiresDocumentCriterion(current.level) ? current.criterion : undefined, title: current.title, description: current.description, effectiveDate: current.effectiveDate })) payload.set(key, value ?? "");
+    if (current.documentMode === "revision") payload.set("documentId", current.documentId ?? "");
     const file = files[0]?.originFileObj as File | undefined;
-    if (file) payload.set("file", file);
+    if (!file) { toast.error("กรุณาแนบไฟล์เอกสาร"); return; }
+    payload.set("file", file);
     startSaving(async () => {
       try {
         const result = await saveQualityDocumentAction(payload);
         if (!result.ok) { toast.error(result.error); return; }
         setSavedCode(result.documentCode);
         setSavedId(result.documentId);
+        setSavedStatus(result.status ?? "DRAFT"); setSavedDate(result.effectiveDate ?? "");
         toast.success("บันทึกเอกสารแล้ว"); setReviewOpen(false); resetForm();
+        loadTargets();
       } catch { toast.error("เชื่อมต่อไม่สำเร็จ กรุณาลองบันทึกอีกครั้ง"); }
     });
   }
   async function preview() {
-    try { await form.validateFields(); setReviewOpen(true); }
+    try { await form.validateFields(); if (!files.length) { toast.error("กรุณาแนบไฟล์เอกสาร"); return; } setReviewOpen(true); }
     catch { toast.error("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน"); }
   }
   const summary = [
@@ -84,19 +120,37 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
     { key: "program", label: "หลักสูตร", children: curriculum?.label || "—" },
     { key: "level", label: "ระดับเอกสาร", children: catalog.levels.find(item => item.value === values.level)?.label || "—" },
     ...(needsCriterion ? [{ key: "criterion", label: "เกณฑ์", children: values.criterion || "—" }] : []),
+    { key: "effectiveDate", label: "วันที่มีผลใช้บังคับ", children: values.effectiveDate || "—" },
   ];
 
-  return <Form<DocumentFormValues> form={form} name="quality-document" layout="vertical" initialValues={EMPTY_DOCUMENT} disabled={saving}
+  return <Form<DocumentFormValues> form={form} name="quality-document" layout="vertical" initialValues={{ ...EMPTY_DOCUMENT, effectiveDate: qualityToday() }} disabled={saving}
     scrollToFirstError={{ focus: true }} onFinish={saveDocument}
     onFinishFailed={() => toast.error("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน", { id: "document-validation" })}
     className="qa-document-form">
-    {savedCode && <Alert className="mb-3" type="success" showIcon title="บันทึกเป็นฉบับร่างแล้ว"
-      description={<span className="break-all font-mono text-xs">{savedCode}</span>}
-      action={<div className="flex flex-wrap gap-2"><Button size="small" onClick={() => copyCode(savedCode)} icon={<Copy size={14} aria-hidden="true" />}>คัดลอก</Button><Button size="small" type="primary" disabled={!savedId} onClick={() => setOpenedDocument(savedId)}>เปิดเอกสาร / ส่งตรวจ</Button></div>} />}
+    {savedCode && <Alert className="mb-3" type="success" showIcon title={savedStatus === "PUBLISHED" ? "เอกสารมีผลใช้บังคับแล้ว" : "บันทึกเป็นฉบับร่างรอวันที่กำหนดแล้ว"}
+      description={<span className="break-all text-xs"><span className="font-mono">{savedCode}</span>{savedDate && ` · มีผลใช้วันที่ ${savedDate}`}</span>}
+      action={<div className="flex flex-wrap gap-2"><Button size="small" onClick={() => copyCode(savedCode)} icon={<Copy size={14} aria-hidden="true" />}>คัดลอก</Button><Button size="small" type="primary" disabled={!savedId} onClick={() => setOpenedDocument(savedId)}>ดูเอกสารทุกเวอร์ชัน</Button></div>} />}
     <Card size="small">
       <div className="qa-form-columns">
         <section className="min-w-0" aria-labelledby="qa-category-title">
           <h2 id="qa-category-title" className="qa-form-section-title">1. จัดหมวดหมู่เอกสาร</h2>
+          <Form.Item name="documentMode" label="ประเภทการเพิ่มเอกสาร">
+            <Segmented block options={[{ value: "new", label: "เอกสารใหม่" }, { value: "revision", label: "เวอร์ชันของเอกสารเดิม" }]}
+              onChange={() => { form.setFieldValue("documentId", undefined); setFiles([]); }} />
+          </Form.Item>
+          {revisionMode ? <>
+            <Form.Item name="documentId" label="เอกสารเดิม" rules={[{ required: true, message: "กรุณาเลือกเอกสารเดิม" }, {
+              validator: (_, value) => !value || targets.some(document => document.id === value) ? Promise.resolve() : Promise.reject(new Error("เอกสารที่เลือกไม่พร้อมเพิ่มเวอร์ชัน กรุณาเลือกรายการใหม่")),
+            }]}>
+              <Select showSearch optionFilterProp="label" loading={loadingTargets} placeholder="เลือกรหัสหรือชื่อเอกสารเดิม"
+                options={targets.map(document => ({ value: document.id, label: `${document.code} — ${document.title}` }))}
+                notFoundContent="ไม่พบเอกสารที่พร้อมเพิ่มเวอร์ชัน หรือมีฉบับรอมีผลใช้อยู่แล้ว"
+                onChange={id => { const document = targets.find(item => item.id === id); if (document) form.setFieldsValue({ ...document, documentId: document.id }); setFiles([]); }} />
+            </Form.Item>
+            {targetsError && <Alert className="mb-4" type="error" showIcon title={targetsError} action={<Button onClick={loadTargets}>ลองใหม่</Button>} />}
+            {target && <Alert className="mb-4" type="info" showIcon title={`ฉบับเดิม ${target.currentVersion} ยังมีผลใช้บังคับ`}
+              description="ระบบเก็บเวอร์ชันใหม่แยกไว้ และเปลี่ยนฉบับใช้งานเมื่อถึงวันที่กำหนด" />}
+          </> : <>
           <div className="grid gap-x-4 sm:grid-cols-2">
             <Form.Item name="department" label="หน่วยงาน" rules={[{ required: true, message: "กรุณาเลือกหน่วยงาน" }]}>
               <Select placeholder="เลือกหน่วยงาน" options={catalog.departments.map(item => ({ value: item.value, label: item.label }))}
@@ -120,11 +174,12 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
               options={framework ? catalog.criteria[framework] ?? [] : []} showSearch={{ optionFilterProp: "label" }} optionLabelProp="label" allowClear
               virtual={false} listHeight={256} classNames={{ popup: { root: "qa-criterion-dropdown" } }} notFoundContent="ไม่พบเกณฑ์ที่ค้นหา" />
           </Form.Item> : <p className="mb-6 text-sm text-muted">ระเบียบปฏิบัติ (SP) ไม่ต้องเลือกเกณฑ์ประเมิน</p>}
+          </>}
           <div className="qa-form-code-row">
-            <div className="min-w-0 flex-1"><span className="text-xs text-muted">รหัสเอกสาร · ลำดับอัตโนมัติ</span>
+            <div className="min-w-0 flex-1"><span className="text-xs text-muted">{revisionMode ? "รหัสเอกสารเดิม" : "รหัสเอกสาร · ลำดับอัตโนมัติ"}</span>
               <output id="document-code-preview" className="mt-1 block break-all font-mono text-xs" aria-live="polite">{code || "เลือกหมวดหมู่เพื่อดูตัวอย่างรหัส"}</output>
             </div>
-            <Popover trigger="click" title="รหัสเอกสาร" content={<div className="max-w-64 text-sm leading-6">ระบบกำหนดลำดับเริ่ม 001 เมื่อบันทึก<br />XXX เป็นตัวอย่างลำดับที่ยังไม่ได้กำหนด<br />รหัสเอกสารและเลขฉบับแยกกัน<br />ฉบับอนุมัติครั้งแรกคือ 000</div>}>
+            <Popover trigger="click" title="รหัสเอกสาร" content={<div className="max-w-64 text-sm leading-6">ระบบกำหนดลำดับเริ่ม 001 เมื่อบันทึก<br />XXX เป็นตัวอย่างลำดับที่ยังไม่ได้กำหนด<br />รหัสเอกสารและเลขฉบับแยกกัน<br />ฉบับแรกคือ 000 และมีผลอัตโนมัติตามวันที่กำหนด</div>}>
               <Button type="text" size="small" aria-label="วิธีออกรหัสเอกสาร" icon={<Info size={16} aria-hidden="true" />} />
             </Popover>
           </div>
@@ -137,7 +192,12 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
           <Form.Item name="description" label="คำอธิบาย (ไม่บังคับ)">
             <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} maxLength={2000} placeholder="ขอบเขตหรือรายละเอียดเพิ่มเติม" />
           </Form.Item>
-          <label className="mb-2 block text-[13px]">ไฟล์เอกสาร <span className="text-muted">(แนบภายหลังได้)</span></label>
+          <Form.Item name="effectiveDate" label="วันที่มีผลใช้บังคับ" rules={[{ required: true, message: "กรุณาระบุวันที่มีผลใช้บังคับ" }, {
+            validator: (_, value) => { const error = effectiveDateError(value); return error ? Promise.reject(new Error(error)) : Promise.resolve(); },
+          }]}>
+            <Input type="date" min={qualityToday()} />
+          </Form.Item>
+          <label className="mb-2 block text-[13px]">ไฟล์เอกสาร <span className="text-red-500">*</span></label>
           {needsAttachment && !files.length && <Alert className="mb-2" type="warning" showIcon title="เลือกไฟล์แนบอีกครั้ง ไฟล์ไม่ถูกเก็บในเครื่อง" />}
           <Upload.Dragger accept=".pdf,.doc,.docx,.xls,.xlsx" maxCount={1} fileList={files} disabled={saving}
             beforeUpload={file => {
@@ -170,8 +230,8 @@ export default function QualityDocumentForm({ userId, catalog }: { userId: strin
       <Descriptions column={1} size="small" items={summary} />
       {values.description && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-muted">{values.description}</p>}
       {files[0] && <p className="mt-3 flex items-center gap-2 break-all text-sm"><Paperclip size={15} aria-hidden="true" />{files[0].name}</p>}
-      <p className="mt-4 text-xs text-muted">บันทึกเป็นฉบับร่าง จากนั้นเปิดเอกสารเพื่อส่งตรวจอนุมัติ โดยอนุมัติครั้งแรกเป็นฉบับ 000</p>
+      <p className="mt-4 text-xs text-muted">เอกสารจะมีผลใช้อัตโนมัติตามวันที่กำหนด โดยฉบับใหม่ยังเป็นร่างก่อนถึงวันนั้น และฉบับเดิมยังใช้งานได้</p>
     </Modal>
-    {openedDocument && <QualityDocumentWorkflow documentId={openedDocument} onClose={() => setOpenedDocument(null)} onChanged={() => undefined} />}
+    {openedDocument && <QualityDocumentVersions documentId={openedDocument} onClose={() => setOpenedDocument(null)} />}
   </Form>;
 }

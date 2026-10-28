@@ -78,6 +78,15 @@ export const authOptions: NextAuthOptions = {
   },
 };
 
-export function auth() {
-  return getServerSession(authOptions);
+export async function auth() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id || !/^[1-9]\d{0,9}$/.test(session.user.id) || Number(session.user.id) > 2_147_483_647) return null;
+  // Existing JWTs must not grant access after an account is deleted or disabled.
+  const user = await prisma.users.findUnique({
+    where: { id: Number(session.user.id) },
+    select: { is_active: true, role: { select: { name: true, is_active: true } } },
+  });
+  if (!user?.is_active) return null;
+  session.user.role = user.role?.is_active ? user.role.name : null;
+  return session;
 }

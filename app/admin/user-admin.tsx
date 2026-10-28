@@ -29,6 +29,7 @@ import toast from "react-hot-toast";
 import {
   deleteDepartmentAction,
   deletePositionAction,
+  deleteUserAction,
   saveDepartmentAction,
   savePositionAction,
   saveUserAction,
@@ -335,11 +336,12 @@ function CrudPanel({
   );
 }
 
-function UsersPanel({ data }: { data: UserDirectoryData }) {
+function UsersPanel({ data, currentUserId }: { data: UserDirectoryData; currentUserId: string }) {
   const router = useRouter();
   const [form] = Form.useForm();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<DirectoryUser | null>(null);
+  const [deleting, setDeleting] = useState<DirectoryUser | null>(null);
   const [pending, startTransition] = useTransition();
 
   function openCreate() {
@@ -386,6 +388,19 @@ function UsersPanel({ data }: { data: UserDirectoryData }) {
       setOpen(false);
       setEditing(null);
       router.refresh();
+    });
+  }
+
+  function removeUser() {
+    if (!deleting || pending) return;
+    startTransition(async () => {
+      try {
+        const result = await deleteUserAction(deleting.id);
+        if (!result.ok) { toast.error(result.error); return; }
+        toast.success("ลบผู้ใช้งานแล้ว");
+        setDeleting(null);
+        router.refresh();
+      } catch { toast.error("ลบผู้ใช้งานไม่สำเร็จ กรุณาลองใหม่"); }
     });
   }
 
@@ -443,10 +458,10 @@ function UsersPanel({ data }: { data: UserDirectoryData }) {
     {
       title: "จัดการ",
       key: "actions",
-      width: 80,
+      width: 100,
       fixed: "right",
       render: (_: unknown, row: DirectoryUser) => (
-        <Button
+        <div className="flex gap-1"><Button
           type="text"
           size="small"
           aria-label="แก้ไขผู้ใช้งาน"
@@ -454,6 +469,10 @@ function UsersPanel({ data }: { data: UserDirectoryData }) {
           onClick={() => openEdit(row)}
           disabled={pending}
         />
+        {String(row.id) !== currentUserId && <Button danger type="text" size="small"
+          title="ลบผู้ใช้งาน" aria-label={`ลบผู้ใช้งาน ${row.username}`}
+          icon={<Trash2 size={16} aria-hidden="true" />} disabled={pending}
+          onClick={() => setDeleting(row)} />}</div>
       ),
     },
   ];
@@ -462,7 +481,7 @@ function UsersPanel({ data }: { data: UserDirectoryData }) {
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm leading-6 text-muted">
-          เพิ่มหรือแก้ไขข้อมูลบัญชีผู้ใช้ บทบาท หน่วยงาน/สังกัด ตำแหน่ง และรหัสผ่าน
+          เพิ่ม แก้ไข หรือลบบัญชีผู้ใช้ จัดการบทบาท หน่วยงาน/สังกัด ตำแหน่ง และรหัสผ่าน
           (ผู้ดูแลระบบเท่านั้น)
         </p>
         <Button
@@ -483,6 +502,14 @@ function UsersPanel({ data }: { data: UserDirectoryData }) {
         pagination={{ pageSize: 10, showSizeChanger: false }}
         scroll={{ x: "max-content" }}
       />
+
+      <Modal title="ยืนยันลบผู้ใช้งาน" open={!!deleting} onOk={removeUser}
+        onCancel={() => { if (!pending) setDeleting(null); }} confirmLoading={pending}
+        okText="ลบผู้ใช้งาน" cancelText="ยกเลิก" closable={!pending} mask={{ closable: !pending }}
+        okButtonProps={{ danger: true }} cancelButtonProps={{ disabled: pending }}>
+        <p className="mt-4">ต้องการลบบัญชี <strong>{deleting?.username}</strong> หรือไม่?</p>
+        <p className="mt-2 text-sm text-muted">บัญชีจะถูกลบถาวรและใช้งานต่อไม่ได้ เอกสารและประวัติการทำงานเดิมยังคงอยู่</p>
+      </Modal>
 
       <Modal
         forceRender
@@ -621,9 +648,11 @@ function UsersPanel({ data }: { data: UserDirectoryData }) {
 export default function UserAdmin({
   section,
   data,
+  currentUserId,
 }: {
   section: DirectorySection;
   data: UserDirectoryData;
+  currentUserId: string;
 }) {
   return (
     <div className="mb-9">
@@ -674,7 +703,7 @@ export default function UserAdmin({
           />
         )}
 
-        {section === "directory-users" && <UsersPanel data={data} />}
+        {section === "directory-users" && <UsersPanel data={data} currentUserId={currentUserId} />}
       </Card>
     </div>
   );
