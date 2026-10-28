@@ -7,6 +7,7 @@ import { storeQualityFile, removeQualityFile } from "./quality-document-files";
 import { writeAudit } from "./audit-log";
 import type { DocumentSaveResult } from "@/types/quality-document";
 import type { QualityRevisionTarget } from "@/types/quality-document-schedule";
+import type { EffectiveDateCommand } from "@/types/quality-document-versions";
 
 export async function qualityRevisionTargets(userId: string): Promise<QualityRevisionTarget[]> {
   const actor = await currentActor(userId);
@@ -74,4 +75,49 @@ export async function saveScheduledQualityRevision(form: FormData, userId: strin
     if (file) await removeQualityFile(file.file_path);
     return { ok: false, error: error instanceof ActionError ? error.message : "บันทึกฉบับใหม่ไม่สำเร็จ กรุณาลองใหม่" };
   }
+}
+
+export async function rescheduleQualityRevision(command: EffectiveDateCommand, userId: string) {
+  await currentActor(userId);
+  if (!command || !Number.isSafeInteger(command.lockVersion) || command.lockVersion < 0) throw new ActionError("ข้อมูลฉบับเอกสารไม่ถูกต้อง");
+  const dateError = effectiveDateError(command.effectiveDate);
+  if (dateError) throw new ActionError(dateError);
+  const id = workflowId(command.revisionId);
+  const target = await prisma.docs_qa_document_revisions.findUnique({ where: { id }, select: { document_id: true } });
+  if (!target) throw new ActionError("ไม่พบฉบับเอกสาร");
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM docs_qa_documents WHERE id = ${target.document_id} FOR UPDATE`;
+    const actor = await currentActor(userId, tx);
+    const row = await tx.docs_qa_documents.findUnique({ where: { id: target.document_id } });
+    if (!row || (!actor.admin && row.created_by !== actor.id)) throw new ActionError("ไม่มีสิทธิ์เปลี่ยนวันที่มีผลใช้ของเอกสารนี้");
+    if (row.deleted_at || row.status === "ARCHIVED") throw new ActionError("เอกสารนี้ถูกลบหรือยกเลิกใช้แล้ว");
+    // Resolve dates that became due since the dialog was opened before permitting edits.
+    const document = await activateQualityPublication(tx, row);
+    const revision = await tx.docs_qa_document_revisions.findUniqueOrThrow({ where: { id } });
+    if (revision.lock_version !== command.lockVersion) throw new ActionError("ข้อมูลมีการเปลี่ยนแปลงแล้ว กรุณาโหลดรายละเอียดใหม่");
+    if (document.current_version === revision.version_label || !revision.effective_date
+      || revision.effective_date.toISOString().slice(0, 10) <= qualityToday()
+      || !(revision.status === "APPROVED" || (revision.status === "DRAFT" && revision.auto_publish))) {
+      throw new ActionError("เปลี่ยนวันที่ได้เฉพาะฉบับที่ยังรอมีผลใช้เท่านั้น");
+    }
+    // Check again under the row lock in case the Thailand calendar date changed.
+    const currentDateError = effectiveDateError(command.effectiveDate);
+    if (currentDateError) throw new ActionError(currentDateError);
+    const previousDate = revision.effective_date.toISOString().slice(0, 10);
+    if (previousDate === command.effectiveDate) return { ok: true as const };
+    await tx.docs_qa_document_revisions.update({ where: { id }, data: {
+      effective_date: new Date(`${command.effectiveDate}T00:00:00Z`), lock_version: { increment: 1 },
+    } });
+    await tx.docs_qa_review_events.create({ data: {
+      revision_id: id, action: "RESCHEDULE", actor_id: actor.id, actor_name: actor.name,
+      comment: `เปลี่ยนวันที่มีผลใช้จาก ${previousDate} เป็น ${command.effectiveDate}`,
+    } });
+    await writeAudit(tx, actor, {
+      action: "UPDATE", entityType: "QUALITY_DOCUMENT", entityId: String(document.id), entityLabel: document.document_code,
+      summary: `เปลี่ยนวันที่มีผลใช้ฉบับ ${revision.version_label}`,
+      details: { version: revision.version_label, previousDate, effectiveDate: command.effectiveDate },
+    });
+    await activateQualityPublication(tx, document);
+    return { ok: true as const };
+  }, { isolationLevel: "ReadCommitted" });
 }

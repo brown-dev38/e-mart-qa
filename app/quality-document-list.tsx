@@ -134,6 +134,6 @@ export default function QualityDocumentList({ scope, canDelete = false, onUpdate
       {!filtered.length && <Empty description={loaded ? "ไม่พบเอกสารตามเงื่อนไข" : "กำลังโหลดเอกสาร…"} />}
       <Pagination size="small" {...pagination} />
     </div>
-    {selected && <QualityDocumentVersions key={selected} documentId={selected} onClose={() => setSelected(null)} />}
+    {selected && <QualityDocumentVersions key={selected} documentId={selected} onClose={() => setSelected(null)} onChanged={load} />}
   </Card>;
 }

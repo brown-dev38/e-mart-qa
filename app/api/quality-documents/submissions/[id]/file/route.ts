@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { qualitySubmissionFile } from "@/lib/quality-document-workflow";
-import { verifiedSubmissionBytes } from "@/lib/quality-document-files";
+import { qualityDownloadFileName, verifiedSubmissionBytes } from "@/lib/quality-document-files";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -12,7 +12,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const data = await verifiedSubmissionBytes({ file_path: file.path, file_sha256: file.hash });
     return new Response(data, { headers: {
       "Content-Type": "application/octet-stream",
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(review ? `สำหรับตรวจทาน-${file.name}` : file.name)}`,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(qualityDownloadFileName(file.name))}`,
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
     } });

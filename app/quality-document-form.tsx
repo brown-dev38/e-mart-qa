@@ -116,7 +116,7 @@ export default function QualityDocumentForm({ userId, catalog, initialDocumentId
   }
   const summary = [
     { key: "department", label: "หน่วยงาน", children: department?.label || "—" },
-    ...(!isManagement ? [{ key: "job", label: "ชื่องาน", children: jobOptions.find(item => item.value === values.job)?.label || "—" }] : []),
+    ...(!isManagement ? [{ key: "job", label: "ชื่องาน", children: jobOptions.find(item => item.value === values.job)?.label || "ไม่ระบุชื่องาน" }] : []),
     { key: "program", label: "หลักสูตร", children: curriculum?.label || "—" },
     { key: "level", label: "ระดับเอกสาร", children: catalog.levels.find(item => item.value === values.level)?.label || "—" },
     ...(needsCriterion ? [{ key: "criterion", label: "เกณฑ์", children: values.criterion || "—" }] : []),
@@ -129,7 +129,7 @@ export default function QualityDocumentForm({ userId, catalog, initialDocumentId
     className="qa-document-form">
     {savedCode && <Alert className="mb-3" type="success" showIcon title={savedStatus === "PUBLISHED" ? "เอกสารมีผลใช้บังคับแล้ว" : "บันทึกเป็นฉบับร่างรอวันที่กำหนดแล้ว"}
       description={<span className="break-all text-xs"><span className="font-mono">{savedCode}</span>{savedDate && ` · มีผลใช้วันที่ ${savedDate}`}</span>}
-      action={<div className="flex flex-wrap gap-2"><Button size="small" onClick={() => copyCode(savedCode)} icon={<Copy size={14} aria-hidden="true" />}>คัดลอก</Button><Button size="small" type="primary" disabled={!savedId} onClick={() => setOpenedDocument(savedId)}>ดูเอกสารทุกเวอร์ชัน</Button></div>} />}
+      action={<div className="flex flex-wrap gap-2"><Button size="small" onClick={() => copyCode(savedCode)} icon={<Copy size={14} aria-hidden="true" />}>คัดลอก</Button><Button size="small" type="primary" disabled={!savedId} onClick={() => setOpenedDocument(savedId)}>ดูรายละเอียดเอกสาร</Button></div>} />}
     <Card size="small">
       <div className="qa-form-columns">
         <section className="min-w-0" aria-labelledby="qa-category-title">
@@ -156,8 +156,8 @@ export default function QualityDocumentForm({ userId, catalog, initialDocumentId
               <Select placeholder="เลือกหน่วยงาน" options={catalog.departments.map(item => ({ value: item.value, label: item.label }))}
                 onChange={() => form.setFieldValue("job", undefined)} />
             </Form.Item>
-            {!isManagement ? <Form.Item name="job" label="ชื่องาน" rules={[{ required: true, message: "กรุณาเลือกชื่องาน" }]}>
-              <Select placeholder={values.department ? "เลือกชื่องาน" : "เลือกหน่วยงานก่อน"} disabled={saving || !department?.hasSubDepartment} options={jobOptions} />
+            {!isManagement ? <Form.Item name="job" label="ชื่องาน (ไม่บังคับ)">
+              <Select allowClear={{ label: "ล้างชื่องาน" }} placeholder={values.department ? "ไม่ระบุชื่องาน" : "เลือกหน่วยงานก่อน"} disabled={saving || !department?.hasSubDepartment} options={jobOptions} />
             </Form.Item> : <div className="qa-form-inline-note">หน่วยงานนี้ไม่มีงานย่อย</div>}
             <Form.Item name="curriculum" label="หลักสูตร" rules={[{ required: true, message: "กรุณาเลือกหลักสูตร" }]}>
               <Select placeholder="เลือกหลักสูตร" options={catalog.programs.map(item => ({ value: item.value, label: item.label }))}
@@ -232,6 +232,6 @@ export default function QualityDocumentForm({ userId, catalog, initialDocumentId
       {files[0] && <p className="mt-3 flex items-center gap-2 break-all text-sm"><Paperclip size={15} aria-hidden="true" />{files[0].name}</p>}
       <p className="mt-4 text-xs text-muted">เอกสารจะมีผลใช้อัตโนมัติตามวันที่กำหนด โดยฉบับใหม่ยังเป็นร่างก่อนถึงวันนั้น และฉบับเดิมยังใช้งานได้</p>
     </Modal>
-    {openedDocument && <QualityDocumentVersions documentId={openedDocument} onClose={() => setOpenedDocument(null)} />}
+    {openedDocument && <QualityDocumentVersions documentId={openedDocument} onClose={() => setOpenedDocument(null)} onChanged={loadTargets} />}
   </Form>;
 }

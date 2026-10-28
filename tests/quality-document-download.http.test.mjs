@@ -63,13 +63,14 @@ test("only approved files can be downloaded for use; review access is limited to
     }, include: { revisions: true } });
     const revision = document.revisions[0];
     const revisionUrl = `/api/quality-documents/revisions/${revision.id}/file`;
-    async function get(url, actor, status) {
+    async function get(url, actor, status, expectedName) {
       const response = await fetch(new URL(url, base), { headers: actor ? { cookie: cookies[actor] } : {}, signal: AbortSignal.timeout(30_000) });
       assert.equal(response.status, status, `${actor || "anonymous"}: ${url}`);
       if (status === 200) {
         assert.equal(response.headers.get("cache-control"), "private, no-store");
         const disposition = decodeURIComponent(response.headers.get("content-disposition"));
-        assert.equal(disposition.includes("สำหรับตรวจทาน-"), url.includes("purpose=review"));
+        assert.equal(disposition.includes("สำหรับตรวจทาน-"), false);
+        if (expectedName) assert.equal(disposition, `attachment; filename*=UTF-8''${expectedName}`);
         assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
       } else await response.arrayBuffer();
     }
@@ -85,6 +86,7 @@ test("only approved files can be downloaded for use; review access is limited to
     await restricted(revisionUrl);
     let detail = (await action("qualityDocumentVersionsAction", [String(document.id)])).detail;
     assert.equal(detail.versions[0].fileName, "procedure.pdf");
+    assert.equal(detail.versions[0].downloadUrl, null);
     assert.equal(Object.hasOwn(detail.versions[0], "fileUrl"), false);
     assert.equal(detail.versions[0].previewUrl, `/api/quality-documents/revisions/${revision.id}/preview`);
     assert.equal((await action("listQualityDocumentsAction", [{ departmentCode: marker }])).documents[0].file_path, null);
@@ -121,6 +123,7 @@ test("only approved files can be downloaded for use; review access is limited to
     await get(submissionUrl, "outsider", 404);
     detail = (await action("qualityDocumentVersionsAction", [String(document.id)])).detail;
     assert.equal(detail.versions[0].state, "EFFECTIVE");
+    assert.equal(detail.versions[0].downloadUrl, revisionUrl);
     assert.equal(Object.hasOwn(detail.versions[0], "fileUrl"), false);
     assert.equal((await action("listQualityDocumentsAction", [{ departmentCode: marker }])).documents[0].file_path, revisionUrl);
     const nextDraft = await prisma.docs_qa_document_revisions.create({ data: { document_id: document.id, version_label: "DRAFT", open_slot: 1, title: marker, file_path: draftPath, file_name: "next.pdf" } });
@@ -147,6 +150,7 @@ test("only approved files can be downloaded for use; review access is limited to
     const retainedRevision = retained.versions.find(row => row.id === String(revision.id));
     assert.equal(retained.deleted, true);
     assert.equal(retainedRevision.previewUrl, `/api/quality-documents/revisions/${revision.id}/preview`);
+    assert.equal(retainedRevision.downloadUrl, null);
     assert.equal(Object.hasOwn(retainedRevision, "fileUrl"), false);
     assert.equal(Object.hasOwn(retainedRevision, "submissions"), false);
     assert.equal((await action("listQualityDocumentsAction", [{ departmentCode: marker }], "reviewer")).documents.length, 0);
@@ -157,10 +161,18 @@ test("only approved files can be downloaded for use; review access is limited to
     await get(legacyPath.replace("qa-documents", "%71a-documents"), null, 404);
     await get(legacyPath.replace("qa-documents", "QA-documents"), null, 404);
     await get(legacyPath.replace("uploads", "%75ploads"), null, 404);
+    const originalName = "ระเบียบปฏิบัติระบบเอกสารคุณภาพ.pdf";
+    const importedName = "ระเบียบปฏิบัติระบบเอกสารคุณภาพ (2).pdf";
+    await prisma.docs_qa_submissions.update({ where: { id: submission.id }, data: { file_name: `สำหรับตรวจทาน-${importedName}` } });
+    for (const url of [revisionUrl, submissionUrl]) {
+      await get(url, "owner", 200, originalName);
+      await get(`${url}?purpose=review`, "reviewer", 200, originalName);
+    }
     // Imported approved revisions can still be read through the checked endpoint.
     await prisma.docs_qa_submissions.delete({ where: { id: submission.id } });
-    await prisma.docs_qa_document_revisions.update({ where: { id: revision.id }, data: { file_path: legacyPath } });
-    await get(revisionUrl, "outsider", 200);
+    await prisma.docs_qa_document_revisions.update({ where: { id: revision.id }, data: { file_path: legacyPath, file_name: `สำหรับตรวจทาน-สำหรับตรวจทาน-${importedName}` } });
+    await get(revisionUrl, "outsider", 200, originalName);
+    await get(`${revisionUrl}?purpose=review`, "reviewer", 200, originalName);
   } finally {
     if (document) await prisma.docs_qa_documents.delete({ where: { id: document.id } });
     for (const file of files) await unlink(path.join(root, file)).catch(() => undefined);

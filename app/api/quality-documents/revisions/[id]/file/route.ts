@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { auth } from "@/lib/auth";
 import { qualityRevisionFile } from "@/lib/quality-document-workflow";
-import { qualityFilePath, verifiedSubmissionBytes } from "@/lib/quality-document-files";
+import { qualityDownloadFileName, qualityFilePath, verifiedSubmissionBytes } from "@/lib/quality-document-files";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -15,7 +15,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       : await readFile(qualityFilePath(file.path));
     return new Response(data, { headers: {
       "Content-Type": "application/octet-stream",
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(review ? `สำหรับตรวจทาน-${file.name}` : file.name)}`,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(qualityDownloadFileName(file.name))}`,
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
     } });

@@ -20,7 +20,7 @@ function pdfFixture() {
   return Buffer.from(value);
 }
 
-test("version details are read-only and preview authorized PDF, Word and Excel versions without original file responses", {
+test("version details show current, upcoming and two historical versions with authorized previews", {
   skip: process.env.RUN_HTTP_TESTS !== "1", timeout: 120_000,
 }, async () => {
   await import("dotenv/config");
@@ -112,12 +112,15 @@ test("version details are read-only and preview authorized PDF, Word and Excel v
       return response.json();
     }
     const all = await details("owner");
-    assert.equal(all.ok, true); assert.equal(all.detail.versions.length, 7);
+    assert.equal(all.ok, true); assert.equal(all.detail.versions.length, 4);
     assert.equal(all.detail.versions.find(row => row.id === String(current.id)).state, "EFFECTIVE");
-    assert.equal(all.detail.versions.find(row => row.id === String(missing.id)).previewUrl, null);
-    for (const version of all.detail.versions) for (const key of ["fileUrl", "reviewFileUrl", "submissions", "canEdit", "canApprove", "canReview", "lockVersion"]) assert.equal(Object.hasOwn(version, key), false);
+    assert.equal(all.detail.versions.find(row => row.id === String(current.id)).downloadUrl, `/api/quality-documents/revisions/${current.id}/file`);
+    assert.ok(all.detail.versions.filter(row => row.state !== "EFFECTIVE").every(row => row.downloadUrl === null));
+    assert.ok(!all.detail.versions.some(row => row.id === String(missing.id)));
+    assert.deepEqual(all.detail.versions.map(row => row.version), ["004", "ฉบับร่าง", "003", "002"]);
+    for (const version of all.detail.versions) for (const key of ["fileUrl", "reviewFileUrl", "submissions", "canEdit", "canApprove", "canReview"]) assert.equal(Object.hasOwn(version, key), false);
     assert.ok(!JSON.stringify(all).includes("storage/qa-documents"));
-    assert.equal((await details("outsider")).detail.versions.length, 6);
+    assert.equal((await details("outsider")).detail.versions.length, 3);
     const rendered = await preview(oldPdf, "outsider");
     assert.equal(rendered.kind, "pdf"); assert.equal(rendered.totalPages, 2);
     assert.ok(rendered.image.startsWith("data:image/png;base64,"));
@@ -148,7 +151,9 @@ test("version details are read-only and preview authorized PDF, Word and Excel v
     await writeFile(evidenceFile.file_path, pdf);
     await prisma.docs_qa_documents.update({ where: { id: document.id }, data: { deleted_at: new Date() } });
     assert.equal((await details("owner")).ok, false); await preview(oldPdf, "owner", 404);
-    assert.equal((await details("admin")).ok, true); assert.equal((await preview(oldPdf, "admin")).kind, "pdf");
+    const deletedDetail = await details("admin");
+    assert.equal(deletedDetail.ok, true); assert.ok(deletedDetail.detail.versions.every(row => row.downloadUrl === null));
+    assert.equal((await preview(oldPdf, "admin")).kind, "pdf");
   } finally {
     if (document) await prisma.docs_qa_documents.delete({ where: { id: document.id } });
     for (const file of files) await unlink(file).catch(() => undefined);

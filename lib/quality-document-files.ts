@@ -48,6 +48,14 @@ export function revisionFileUrl(id: bigint | string) {
   return `/api/quality-documents/revisions/${id}/file`;
 }
 
+export function qualityDownloadFileName(name: string): string {
+  const original = name.replace(/^(?:สำหรับตรวจทาน-)+/u, "") || name;
+  const extension = path.extname(original);
+  const stem = extension ? original.slice(0, -extension.length) : original;
+  const base = stem.replace(/(?:\s+\([1-9]\d*\))+$/u, "");
+  return `${base || stem}${extension}`;
+}
+
 export function submissionFileUrl(id: bigint | string) {
   return `/api/quality-documents/submissions/${id}/file`;
 }

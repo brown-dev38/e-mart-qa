@@ -32,11 +32,12 @@ test("SP codes omit the criterion, including a selection left over from another 
   assert.equal(buildDocumentPrefix({ ...values, department: "EDU", job: "QA" }, catalog), "EDU-QA-M.D.-SP");
 });
 
-test("SP still requires the other classification fields and a valid subdepartment", () => {
+test("SP requires the other classification fields and validates an optional subdepartment", () => {
   for (const field of ["department", "curriculum", "level"]) {
     assert.equal(buildDocumentPrefix({ ...values, [field]: undefined }, catalog), null);
   }
-  assert.equal(buildDocumentPrefix({ ...values, department: "EDU" }, catalog), null);
+  assert.equal(buildDocumentPrefix({ ...values, department: "EDU" }, catalog), "EDU-M.D.-SP");
+  assert.equal(buildDocumentPrefix({ ...values, department: "EDU", job: "" }, catalog), "EDU-M.D.-SP");
   assert.equal(buildDocumentPrefix({ ...values, department: "EDU", job: "UNKNOWN" }, catalog), null);
 });
 
@@ -44,6 +45,15 @@ test("other document levels continue to require a valid criterion", () => {
   assert.equal(buildDocumentPrefix({ ...values, level: "WI" }, catalog), null);
   assert.equal(buildDocumentPrefix({ ...values, level: "WI", criterion: "INVALID" }, catalog), null);
   assert.equal(buildDocumentPrefix({ ...values, level: "WI", criterion: "W1.1.1" }, catalog), "MGT-M.D.-WI-W1.1.1");
+  assert.equal(buildDocumentPrefix({ ...values, department: "EDU", level: "WI", criterion: "W1.1.1" }, catalog), "EDU-M.D.-WI-W1.1.1");
+});
+
+test("saved EDU drafts restore with or without a job", () => {
+  for (const job of [undefined, "", "QA"]) {
+    const restored = readDocumentDraft(JSON.stringify({ values: { ...values, department: "EDU", job } }), catalog);
+    assert.equal(restored.values.job, job || undefined);
+    assert.equal(buildDocumentPrefix(restored.values, catalog), job ? "EDU-QA-M.D.-SP" : "EDU-M.D.-SP");
+  }
 });
 
 test("restoring a saved SP draft clears its previous criterion while preserving other levels", () => {

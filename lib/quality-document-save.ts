@@ -65,10 +65,8 @@ export async function saveQualityDocument(
   }
 
   let subDepartment = null;
-  if (department.has_sub_department) {
-    if (!jobCode) {
-      return { ok: false, error: "กรุณาเลือกงานย่อยของหน่วยงาน" };
-    }
+  if (jobCode) {
+    if (!department.has_sub_department) return { ok: false, error: "หน่วยงานที่เลือกไม่มีงานย่อย" };
     subDepartment = await prisma.docs_sub_departments.findUnique({
       where: {
         department_id_code: {
@@ -80,8 +78,6 @@ export async function saveQualityDocument(
     if (!subDepartment || !subDepartment.is_active) {
       return { ok: false, error: "ไม่พบงานย่อยที่เลือก หรือถูกปิดใช้งานแล้ว" };
     }
-  } else if (jobCode) {
-    return { ok: false, error: "หน่วยงานที่เลือกไม่มีงานย่อย" };
   }
 
   const criterion = needsCriterion ? await prisma.docs_qa_criteria.findUnique({

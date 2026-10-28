@@ -1,26 +1,34 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Alert, Button, Empty, Modal, Table, Tag, type TableProps } from "antd";
-import { Eye } from "lucide-react";
-import { qualityDocumentVersionsAction } from "./documents/version-actions";
+import { Alert, Button, Empty, Input, Modal, Select, Tag } from "antd";
+import { CalendarDays, Download } from "lucide-react";
+import toast from "react-hot-toast";
+import { qualityDocumentVersionsAction, rescheduleQualityRevisionAction } from "./documents/version-actions";
 import QualityDocumentPreview from "./quality-document-preview";
+import { effectiveDateError } from "@/lib/quality-effective-date";
 import type { DocumentVersion, DocumentVersions, VersionState } from "@/types/quality-document-versions";
+import "./quality-document-versions.css";
 
 const states: Record<VersionState, { label: string; color: string }> = {
-  DRAFT: { label: "ฉบับร่าง", color: "default" }, RETURNED: { label: "ส่งกลับแก้ไข", color: "orange" },
+  DRAFT: { label: "ฉบับร่าง", color: "default" }, RETURNED: { label: "ส่งกลับให้แก้ไข", color: "orange" },
   PENDING: { label: "รออนุมัติ", color: "gold" }, SCHEDULED: { label: "อนุมัติแล้ว · รอมีผล", color: "blue" },
-  EFFECTIVE: { label: "มีผลใช้บังคับ", color: "green" }, SUPERSEDED: { label: "ฉบับเก่า", color: "default" },
-  WITHDRAWN: { label: "ยกเลิกใช้", color: "red" },
+  EFFECTIVE: { label: "มีผลใช้บังคับ", color: "green" }, SUPERSEDED: { label: "ยกเลิกใช้", color: "#dc2626" },
+  WITHDRAWN: { label: "ยกเลิกใช้", color: "#dc2626" },
 };
-const date = (value: string | null) => value ? new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeZone: "Asia/Bangkok" }).format(new Date(value)) : "—";
+const date = (value: string | null) => value ? new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeZone: "Asia/Bangkok" }).format(new Date(value)) : "ยังไม่กำหนด";
+const label = (item: DocumentVersion) => item.version === "ฉบับร่าง" ? item.version : `ฉบับ ${item.version}`;
 
-export default function QualityDocumentVersions({ documentId, onClose }: { documentId: string; onClose: () => void }) {
+export default function QualityDocumentVersions({ documentId, onClose, onChanged }: { documentId: string; onClose: () => void; onChanged?: () => void }) {
   const [detail, setDetail] = useState<DocumentVersions | null>(null);
   const [selected, setSelected] = useState<string>();
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [pending, startTransition] = useTransition();
+  const [editing, setEditing] = useState<DocumentVersion | null>(null);
+  const [effectiveDate, setEffectiveDate] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, startSaving] = useTransition();
   useEffect(() => {
     let cancelled = false;
     startTransition(async () => {
@@ -35,30 +43,77 @@ export default function QualityDocumentVersions({ documentId, onClose }: { docum
   }, [documentId, attempt]);
   const revision = detail?.versions.find(item => item.id === selected)
     ?? detail?.versions.find(item => item.state === "EFFECTIVE") ?? detail?.versions[0];
-  const columns: TableProps<DocumentVersion>["columns"] = [
-    { title: "เวอร์ชัน", key: "version", width: 105, render: (_, item) => <span className="font-medium">{item.version}</span> },
-    { title: "ชื่อเอกสาร", key: "title", render: (_, item) => <div><p className="break-words">{item.title}</p>{item.changeNote && <p className="mt-1 whitespace-pre-wrap break-words text-xs text-muted">{item.changeNote}</p>}<p className="mt-1 break-all text-xs text-muted">{item.fileName || "ยังไม่มีไฟล์"}</p></div> },
-    { title: "สถานะ", key: "state", width: 175, render: (_, item) => <Tag color={states[item.state].color}>{states[item.state].label}</Tag> },
-    { title: "วันที่มีผลใช้", key: "date", width: 140, render: (_, item) => date(item.effectiveDate) },
-    { title: "พรีวิว", key: "preview", width: 120, render: (_, item) => <Button icon={<Eye size={15} aria-hidden="true" />}
-      disabled={!item.previewUrl} onClick={() => setSelected(item.id)} aria-label={`ดูพรีวิวเวอร์ชัน ${item.version}`}>ดูพรีวิว</Button> },
-  ];
-  return <Modal title="เอกสารทุกเวอร์ชัน" open onCancel={onClose} width={1120} style={{ top: 20 }}
-    footer={<Button onClick={onClose}>ปิด</Button>} loading={!detail && pending}>
-    {error && <Alert type="error" showIcon className="mb-4" title={error} action={<Button onClick={() => setAttempt(value => value + 1)}>ลองใหม่</Button>} />}
-    {detail && <div className="space-y-5">
-      <div><p className="break-all font-mono text-xs text-muted">{detail.code}</p><h2 className="mt-2 text-lg font-medium">{detail.title}</h2>
-        <p className="mt-2 text-xs text-muted">เอกสารทุกเวอร์ชันที่คุณมีสิทธิ์ดู พร้อมสถานะและพรีวิว</p></div>
-      {detail.deleted && <Alert type="warning" showIcon title="เอกสารนี้ถูกนำออกจากรายการใช้งานแล้ว" />}
-      <Table<DocumentVersion> rowKey="id" size="small" columns={columns} dataSource={detail.versions} loading={pending}
-        scroll={{ x: 760 }} pagination={{ pageSize: 5, showSizeChanger: false, hideOnSinglePage: true }}
-        rowClassName={item => item.id === revision?.id ? "qa-selected-version" : ""}
-        locale={{ emptyText: <Empty description="ไม่มีเวอร์ชันเอกสารที่คุณเข้าถึงได้" /> }} />
-      {revision && <div className="rounded-xl border border-line bg-canvas p-3 sm:p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium">พรีวิว · {revision.version}</h3><Tag color={states[revision.state].color}>{states[revision.state].label}</Tag></div>
-        {revision.description && <p className="mb-4 whitespace-pre-wrap break-words text-sm text-muted">{revision.description}</p>}
-        {revision.previewUrl ? <QualityDocumentPreview key={revision.id} url={revision.previewUrl} title={revision.title} /> : <Empty description="เวอร์ชันนี้ยังไม่มีไฟล์สำหรับพรีวิว" />}
-      </div>}
-    </div>}
-  </Modal>;
+  const validation = editing ? effectiveDateError(effectiveDate) : null;
+  function saveDate() {
+    if (!editing || validation) return;
+    startSaving(async () => {
+      setSaveError(null);
+      try {
+        const result = await rescheduleQualityRevisionAction({ revisionId: editing.id, lockVersion: editing.lockVersion, effectiveDate });
+        if (!result.ok) { setSaveError(result.error); return; }
+        setEditing(null);
+        setAttempt(value => value + 1);
+        onChanged?.();
+        toast.success("เปลี่ยนวันที่มีผลใช้แล้ว");
+      } catch { setSaveError("เปลี่ยนวันที่มีผลใช้ไม่สำเร็จ กรุณาลองใหม่"); }
+    });
+  }
+  const groups = detail ? [
+    { title: "ฉบับมีผลใช้บังคับ", versions: detail.versions.filter(item => item.state === "EFFECTIVE") },
+    { title: "ฉบับเตรียมใช้งาน", versions: detail.versions.filter(item => ["DRAFT", "RETURNED", "PENDING", "SCHEDULED"].includes(item.state)) },
+    { title: "ยกเลิกใช้ · ล่าสุด 2 ฉบับ", versions: detail.versions.filter(item => ["SUPERSEDED", "WITHDRAWN"].includes(item.state)) },
+  ] : [];
+  return <>
+    <Modal title="รายละเอียดเอกสาร" className="qa-versions-modal" open onCancel={onClose} width={1180} style={{ top: 16 }}
+      footer={<Button onClick={onClose} disabled={saving}>ปิด</Button>} closable={!saving} mask={{ closable: !saving }} loading={!detail && pending}
+      styles={{ container: { display: "flex", flexDirection: "column", height: "min(820px, calc(100dvh - 32px))", padding: 0, overflow: "hidden" }, header: { padding: "14px 20px 10px", margin: 0 }, body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, footer: { margin: 0, padding: "10px 20px", borderTop: "1px solid var(--color-line)" } }}>
+      {error && <Alert type="error" showIcon className="mx-4 mb-2" title={error} action={<Button onClick={() => setAttempt(value => value + 1)}>ลองใหม่</Button>} />}
+      {detail && <>
+        <div className="qa-versions-heading"><p className="break-all font-mono text-xs text-muted">{detail.code}</p><h2 className="mt-1 text-sm font-medium" title={detail.title}>{detail.title}</h2></div>
+        {detail.deleted && <Alert className="mx-4 mb-2" type="warning" showIcon title="เอกสารนี้ถูกนำออกจากรายการใช้งานแล้ว" />}
+        <div className="qa-versions-layout" aria-busy={pending}>
+          <nav className="qa-versions-sidebar" aria-label="เวอร์ชันเอกสาร">
+            {groups.filter(group => group.versions.length).map(group => <div className="qa-versions-group" key={group.title}>
+              <p className="text-xs text-muted">{group.title}</p>
+              {group.versions.map(item => <button key={item.id} type="button" className={`qa-version-option ${item.id === revision?.id ? "is-selected" : ""}`}
+                disabled={pending || saving} aria-label={`ดูพรีวิวเวอร์ชัน ${item.version}`} aria-current={item.id === revision?.id ? "true" : undefined} onClick={() => setSelected(item.id)}>
+                <span className="font-medium text-sm">{label(item)}</span><Tag color={states[item.state].color}>{states[item.state].label}</Tag>
+                <span className="qa-version-option-date text-xs text-muted">มีผลใช้: {date(item.effectiveDate)}</span>
+              </button>)}
+            </div>)}
+            {!detail.versions.some(item => item.state === "EFFECTIVE") && <p className="text-xs text-muted">ยังไม่มีฉบับที่มีผลใช้บังคับ</p>}
+          </nav>
+          <div className="qa-versions-mobile-select"><Select aria-label="เลือกเวอร์ชันเอกสาร" value={revision?.id} onChange={setSelected} disabled={pending || saving}
+            options={groups.filter(group => group.versions.length).map(group => ({ label: group.title, options: group.versions.map(item => ({ value: item.id, label: `${label(item)} · ${states[item.state].label}` })) }))} /></div>
+          {revision ? <section className="qa-versions-content" aria-label="รายละเอียดฉบับที่เลือก">
+            <div className="qa-versions-toolbar">
+              <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-medium">พรีวิว · {label(revision)}</h3><Tag color={states[revision.state].color}>{states[revision.state].label}</Tag></div>
+                <p className="mt-1 text-xs text-muted">วันที่มีผลใช้: {date(revision.effectiveDate)}</p></div>
+              {revision.state === "EFFECTIVE" && revision.downloadUrl && <Button size="small" type="primary" href={revision.downloadUrl} download
+                aria-label={`ดาวน์โหลดไฟล์ฉบับ ${revision.version}`} icon={<Download size={15} aria-hidden="true" />} disabled={pending || saving}>ดาวน์โหลดไฟล์</Button>}
+              {revision.canReschedule && <Button size="small" icon={<CalendarDays size={15} aria-hidden="true" />} disabled={pending || saving} onClick={() => { setEditing(revision); setEffectiveDate(revision.effectiveDate || ""); setSaveError(null); }}>เปลี่ยนวันที่มีผลใช้</Button>}
+            </div>
+            <div className="qa-versions-preview-pane">
+              <details className="qa-version-metadata" key={`metadata:${revision.id}`}><summary>ข้อมูลเอกสาร · {revision.fileName || "ยังไม่มีไฟล์"}</summary>
+                <p className="mt-2 break-words text-sm">{revision.title}</p>
+                {revision.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-muted">{revision.description}</p>}
+                {revision.changeNote && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-muted">สาระที่แก้ไข: {revision.changeNote}</p>}
+              </details>
+              {revision.previewUrl ? <QualityDocumentPreview key={`preview:${revision.id}`} url={revision.previewUrl} title={revision.title} /> : <Empty description="เวอร์ชันนี้ยังไม่มีไฟล์สำหรับพรีวิว" />}
+            </div>
+          </section> : <Empty description="ไม่มีเวอร์ชันเอกสารที่คุณเข้าถึงได้" />}
+        </div>
+      </>}
+    </Modal>
+    <Modal title={`เปลี่ยนวันที่มีผลใช้ · ${editing ? label(editing) : ""}`} open={!!editing} destroyOnHidden onCancel={() => { if (!saving) setEditing(null); }}
+      onOk={saveDate} okText="บันทึกวันที่" cancelText="ยกเลิก" confirmLoading={saving} cancelButtonProps={{ disabled: saving }} closable={!saving} mask={{ closable: false }}
+      okButtonProps={{ disabled: !!validation || effectiveDate === editing?.effectiveDate || pending }}>
+      <p className="mb-3 text-sm text-muted">วันที่เดิม: {date(editing?.effectiveDate ?? null)} · ฉบับปัจจุบันจะใช้ต่อจนถึงวันที่ใหม่</p>
+      <label htmlFor="revision-effective-date" className="mb-2 block text-sm">วันที่มีผลใช้ใหม่</label>
+      <Input id="revision-effective-date" type="date" value={effectiveDate} min={detail?.today} disabled={saving} status={validation ? "error" : undefined} aria-invalid={!!validation} aria-describedby="revision-effective-date-help" onChange={event => setEffectiveDate(event.target.value)} />
+      <p id="revision-effective-date-help" role={validation ? "alert" : undefined} className={`mt-2 text-xs ${validation ? "text-red-600" : "text-muted"}`}>{validation || "เลือกวันนี้หรือวันถัดไป ตามวันที่ประเทศไทย"}</p>
+      {detail && effectiveDate === detail.today && <Alert className="mt-3" type="info" showIcon title="เมื่อบันทึก ฉบับนี้จะมีผลใช้ทันที และฉบับปัจจุบันจะยกเลิกใช้" />}
+      {saveError && <Alert className="mt-3" type="error" showIcon title={saveError} action={<Button size="small" disabled={saving} onClick={() => { setEditing(null); setAttempt(value => value + 1); }}>โหลดรายละเอียดใหม่</Button>} />}
+    </Modal>
+  </>;
 }

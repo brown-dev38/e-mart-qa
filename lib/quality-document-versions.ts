@@ -4,7 +4,7 @@ import { prisma } from "./prisma";
 import { ActionError, currentActor } from "./current-actor";
 import { workflowId } from "./quality-document-workflow";
 import { qualityToday, refreshQualityPublications } from "./quality-document-publication";
-import { qualityFilePath, verifiedSubmissionBytes } from "./quality-document-files";
+import { qualityFilePath, revisionFileUrl, verifiedSubmissionBytes } from "./quality-document-files";
 import type { DocumentPreview, DocumentVersions, VersionState } from "@/types/quality-document-versions";
 
 const issuedStates = new Set(["APPROVED", "SUPERSEDED", "WITHDRAWN"]);
@@ -14,7 +14,7 @@ export async function qualityDocumentVersions(documentId: string, userId: string
   const id = workflowId(documentId);
   await refreshQualityPublications(id);
   const document = await prisma.docs_qa_documents.findUnique({ where: { id }, include: {
-    revisions: { orderBy: { id: "desc" }, include: {
+    revisions: { orderBy: [{ revision_number: "desc" }, { id: "desc" }], include: {
       submissions: { orderBy: { round_no: "desc" }, take: 1 },
       events: { where: { action: "RETURN" }, take: 1, select: { id: true } },
     } },
@@ -22,9 +22,10 @@ export async function qualityDocumentVersions(documentId: string, userId: string
   if (!document || (document.deleted_at && !actor.admin)) throw new ActionError("ไม่พบเอกสารที่คุณเข้าถึงได้");
   const owner = actor.admin || document.created_by === actor.id;
   if (document.status === "DRAFT" && !owner) throw new ActionError("ไม่มีสิทธิ์ดูเอกสารฉบับร่าง");
-  return {
+  const today = qualityToday();
+  const detail: DocumentVersions = {
     id: String(document.id), code: document.document_code, title: document.title,
-    currentVersion: document.current_version, deleted: !!document.deleted_at,
+    currentVersion: document.current_version, deleted: !!document.deleted_at, today,
     versions: document.revisions.filter(revision => owner || issuedStates.has(revision.status)).map(revision => {
       const latest = revision.submissions[0];
       const submitted = revision.status === "PENDING" && latest?.status === "PENDING" ? latest : null;
@@ -45,9 +46,21 @@ export async function qualityDocumentVersions(documentId: string, userId: string
         approvedAt: revision.approved_at?.toISOString() ?? null,
         fileName: submitted?.file_name ?? revision.file_name,
         previewUrl: hasFile ? `/api/quality-documents/revisions/${revision.id}/preview` : null,
+        downloadUrl: state === "EFFECTIVE" && document.status === "PUBLISHED" && !document.deleted_at && revision.file_path ? revisionFileUrl(revision.id) : null,
+        lockVersion: revision.lock_version,
+        canReschedule: owner && !document.deleted_at && document.status !== "ARCHIVED" && document.current_version !== revision.version_label
+          && !!revision.effective_date && revision.effective_date.toISOString().slice(0, 10) > today
+          && (revision.status === "APPROVED" || (revision.status === "DRAFT" && revision.auto_publish)),
       };
     }),
   };
+  const history = detail.versions.filter(item => item.state === "SUPERSEDED" || item.state === "WITHDRAWN").slice(0, 2);
+  detail.versions = [
+    ...detail.versions.filter(item => item.state === "EFFECTIVE"),
+    ...detail.versions.filter(item => !["EFFECTIVE", "SUPERSEDED", "WITHDRAWN"].includes(item.state)),
+    ...history,
+  ];
+  return detail;
 }
 
 export async function qualityDocumentPreview(revisionId: string, userId: string, pageNumber = 1): Promise<DocumentPreview> {

@@ -202,14 +202,14 @@ export function buildDocumentPrefix(
     return null;
   }
 
-  if (department.hasSubDepartment) {
+  if (department.hasSubDepartment && values.job) {
     const jobs = catalog.subDepartments[department.value] ?? [];
     if (!jobs.some((item) => item.value === values.job)) return null;
   }
 
   return [
     department.value,
-    ...(department.hasSubDepartment ? [values.job!] : []),
+    ...(department.hasSubDepartment && values.job ? [values.job] : []),
     program.value,
     level.value,
     ...(requiresDocumentCriterion(level.value) ? [criterion] : []),

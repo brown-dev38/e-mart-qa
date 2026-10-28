@@ -25,7 +25,9 @@ test("dated SP creation and revision replacement work through the running Server
       users.push(user);
       cookies[name] = `next-auth.session-token=${await encode({ secret: process.env.NEXTAUTH_SECRET, token: { uid: String(user.id), sub: String(user.id), role: "user" }, maxAge: 180 })}`;
     }
-    department = await prisma.docs_departments.create({ data: { code: marker, name_th: marker } });
+    department = await prisma.docs_departments.create({ data: { code: marker, name_th: marker, has_sub_department: true } });
+    const job = await prisma.docs_sub_departments.create({ data: { department_id: department.id, code: "QA", name_th: "งานประกันคุณภาพ" } });
+    await prisma.docs_sub_departments.create({ data: { department_id: department.id, code: "OLD", name_th: "งานที่ปิดใช้", is_active: false } });
     framework = await prisma.docs_accreditation_frameworks.create({ data: { code: marker, name_th: marker, prefix_char: "W" } });
     program = await prisma.docs_programs.create({ data: { code: marker, name_th: marker, framework_id: framework.id } });
     const warm = await fetch(base, { headers: { cookie: cookies.owner } }); assert.equal(warm.status, 200); await warm.arrayBuffer();
@@ -50,10 +52,15 @@ test("dated SP creation and revision replacement work through the running Server
     for (const date of ["", "2026-02-30", "2000-01-01"]) assert.equal((await action("saveQualityDocumentAction", [form(date)])).ok, false);
     const noAttachment = form(); noAttachment.delete("file");
     assert.equal((await action("saveQualityDocumentAction", [noAttachment])).ok, false);
+    for (const jobCode of ["UNKNOWN", "OLD"]) {
+      const invalid = form(); invalid.set("job", jobCode);
+      assert.equal((await action("saveQualityDocumentAction", [invalid])).ok, false);
+    }
     const saved = await action("saveQualityDocumentAction", [form()]);
     assert.equal(saved.ok, true, saved.error); assert.equal(saved.status, "DRAFT");
     assert.equal(saved.documentCode, `${marker}-${marker}-SP-001`);
     let row = await prisma.docs_qa_documents.findUniqueOrThrow({ where: { id: BigInt(saved.documentId) }, include: { revisions: true } });
+    assert.equal(row.sub_department_id, null, "departments with jobs may save a document without selecting one");
     const first = row.revisions[0]; assert.equal(row.criterion_id, null); assert.equal(first.auto_publish, true);
     let listed = await action("listQualityDocumentsAction", [{ departmentCode: marker }]);
     assert.equal(listed.documents[0].scheduled_effective_date, tomorrow); assert.equal(listed.documents[0].file_path, null);
@@ -78,6 +85,15 @@ test("dated SP creation and revision replacement work through the running Server
     assert.equal(detail.detail.currentVersion, "001"); assert.deepEqual(detail.detail.versions.map(version => version.state), ["EFFECTIVE", "SUPERSEDED"]);
     assert.equal(await prisma.docs_qa_submissions.count({ where: { revision: { document_id: row.id } } }), 0);
     assert.equal(await prisma.docs_qa_review_events.count({ where: { revision: { document_id: row.id }, action: { in: ["SUBMIT", "REVIEW", "APPROVE"] } } }), 0);
+    const withJob = form(); withJob.set("job", "QA");
+    const savedWithJob = await action("saveQualityDocumentAction", [withJob]);
+    assert.equal(savedWithJob.ok, true, savedWithJob.error);
+    assert.equal(savedWithJob.documentCode, `${marker}-QA-${marker}-SP-001`);
+    assert.equal((await prisma.docs_qa_documents.findUniqueOrThrow({ where: { id: BigInt(savedWithJob.documentId) } })).sub_department_id, job.id);
+    const withoutJob = form(); withoutJob.set("job", "");
+    const consecutive = await Promise.all([action("saveQualityDocumentAction", [withoutJob]), action("saveQualityDocumentAction", [form()])]);
+    for (const result of consecutive) assert.equal(result.ok, true, result.error);
+    assert.deepEqual(consecutive.map(result => result.documentCode).sort(), [`${marker}-${marker}-SP-002`, `${marker}-${marker}-SP-003`], "documents without a job have a separate sequence");
   } finally {
     if (department) {
       const documents = await prisma.docs_qa_documents.findMany({ where: { department_id: department.id }, include: { revisions: true } });
@@ -87,7 +103,10 @@ test("dated SP creation and revision replacement work through the running Server
     }
     if (program) await prisma.docs_programs.delete({ where: { id: program.id } });
     if (framework) await prisma.docs_accreditation_frameworks.delete({ where: { id: framework.id } });
-    if (department) await prisma.docs_departments.delete({ where: { id: department.id } });
+    if (department) {
+      await prisma.docs_sub_departments.deleteMany({ where: { department_id: department.id } });
+      await prisma.docs_departments.delete({ where: { id: department.id } });
+    }
     await prisma.users.deleteMany({ where: { id: { in: users.map(user => user.id) } } });
     await prisma.$disconnect();
   }

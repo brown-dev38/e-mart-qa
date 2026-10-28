@@ -1,0 +1,27 @@
+.qa-versions-heading { padding: 0 20px 12px; border-bottom: 1px solid var(--color-line); }
+.qa-versions-heading h2 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.qa-versions-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); flex: 1; min-height: 0; }
+.qa-versions-sidebar { overflow-y: auto; padding: 14px; border-right: 1px solid var(--color-line); }
+.qa-versions-group + .qa-versions-group { margin-top: 16px; }
+.qa-version-option { display: flex; flex-wrap: wrap; gap: 5px 8px; width: 100%; padding: 10px; margin-top: 6px; text-align: left; border: 1px solid var(--color-line); border-radius: 8px; cursor: pointer; }
+.qa-version-option .ant-tag { margin: 0; font-size: 11px; white-space: normal; }
+.qa-version-option-date { flex-basis: 100%; }
+.qa-version-option:hover, .qa-version-option.is-selected { border-color: var(--color-accent); background: var(--color-canvas); }
+.qa-version-option:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.qa-version-option:disabled { cursor: wait; opacity: .65; }
+.qa-versions-content { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.qa-versions-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--color-line); }
+.qa-versions-toolbar .ant-tag { margin: 0; }
+.qa-versions-preview-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; background: var(--color-canvas); }
+.qa-version-metadata { flex: none; margin-bottom: 12px; padding: 8px 10px; border: 1px solid var(--color-line); border-radius: 8px; }
+.qa-version-metadata summary { cursor: pointer; font-size: 12px; overflow-wrap: anywhere; }
+.qa-versions-mobile-select { display: none; }
+@media (max-width: 767px) {
+  .qa-versions-layout { display: flex; flex-direction: column; }
+  .qa-versions-sidebar { display: none; }
+  .qa-versions-mobile-select { display: block; padding: 10px 12px 0; }
+  .qa-versions-mobile-select .ant-select { width: 100%; }
+  .qa-versions-heading { padding-inline: 12px; }
+  .qa-versions-content { flex: 1; }
+  .qa-versions-toolbar, .qa-versions-preview-pane { padding: 10px 12px; }
+}
