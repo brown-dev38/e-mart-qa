@@ -41,11 +41,20 @@ test("SP requires the other classification fields and validates an optional subd
   assert.equal(buildDocumentPrefix({ ...values, department: "EDU", job: "UNKNOWN" }, catalog), null);
 });
 
-test("other document levels continue to require a valid criterion", () => {
-  assert.equal(buildDocumentPrefix({ ...values, level: "WI" }, catalog), null);
+test("other document levels allow no criterion and validate a selected criterion", () => {
+  for (const criterion of [undefined, "", "   "]) {
+    assert.equal(buildDocumentPrefix({ ...values, level: "WI", criterion }, catalog), "MGT-M.D.-WI");
+    assert.equal(buildDocumentPrefix({ ...values, department: "EDU", level: "WI", criterion }, catalog), "EDU-M.D.-WI");
+  }
   assert.equal(buildDocumentPrefix({ ...values, level: "WI", criterion: "INVALID" }, catalog), null);
   assert.equal(buildDocumentPrefix({ ...values, level: "WI", criterion: "W1.1.1" }, catalog), "MGT-M.D.-WI-W1.1.1");
   assert.equal(buildDocumentPrefix({ ...values, department: "EDU", level: "WI", criterion: "W1.1.1" }, catalog), "EDU-M.D.-WI-W1.1.1");
+});
+
+test("drafts without a criterion restore and generate document codes", () => {
+  const restored = readDocumentDraft(JSON.stringify({ values: { ...values, level: "WI" } }), catalog);
+  assert.equal(restored.values.criterion, undefined);
+  assert.equal(buildDocumentPrefix(restored.values, catalog), "MGT-M.D.-WI");
 });
 
 test("saved EDU drafts restore with or without a job", () => {

@@ -4,7 +4,7 @@ import { startTransition, useCallback, useEffect, useRef, useState, useTransitio
 import { Alert, Button, Card, Descriptions, Form, Input, Modal, Popover, Segmented, Select, Upload, type UploadFile } from "antd";
 import { Copy, Eye, FileText, Info, Paperclip, RotateCcw, Save, Trash2, UploadCloud } from "lucide-react";
 import toast from "react-hot-toast";
-import { buildDocumentPrefix, EMPTY_DOCUMENT, isValidCriterion, readDocumentDraft, requiresDocumentCriterion, type DocumentCatalog, type DocumentFormValues } from "@/lib/quality-document-catalog";
+import { buildDocumentPrefix, EMPTY_DOCUMENT, isValidCriterion, readDocumentDraft, supportsDocumentCriterion, type DocumentCatalog, type DocumentFormValues } from "@/lib/quality-document-catalog";
 import { documentDraftKey } from "@/lib/quality-document-draft";
 import { listQualityRevisionTargetsAction, saveQualityDocumentAction } from "./documents/actions";
 import QualityDocumentVersions from "./quality-document-versions";
@@ -34,7 +34,7 @@ export default function QualityDocumentForm({ userId, catalog, initialDocumentId
   const jobOptions = values.department ? catalog.subDepartments[values.department] ?? [] : [];
   const curriculum = catalog.programs.find(item => item.value === values.curriculum);
   const framework = curriculum?.framework;
-  const needsCriterion = requiresDocumentCriterion(values.level);
+  const canSelectCriterion = supportsDocumentCriterion(values.level);
   const prefix = buildDocumentPrefix(values, catalog);
   const revisionMode = values.documentMode === "revision";
   const target = targets.find(document => document.id === values.documentId);
@@ -93,7 +93,7 @@ export default function QualityDocumentForm({ userId, catalog, initialDocumentId
   function saveDocument() {
     const current = form.getFieldsValue(true) as DocumentFormValues;
     const payload = new FormData();
-    for (const [key, value] of Object.entries({ department: current.department, job: current.job, program: current.curriculum, level: current.level, criterion: requiresDocumentCriterion(current.level) ? current.criterion : undefined, title: current.title, description: current.description, effectiveDate: current.effectiveDate })) payload.set(key, value ?? "");
+    for (const [key, value] of Object.entries({ department: current.department, job: current.job, program: current.curriculum, level: current.level, criterion: supportsDocumentCriterion(current.level) ? current.criterion : undefined, title: current.title, description: current.description, effectiveDate: current.effectiveDate })) payload.set(key, value ?? "");
     if (current.documentMode === "revision") payload.set("documentId", current.documentId ?? "");
     const file = files[0]?.originFileObj as File | undefined;
     if (!file) { toast.error("กรุณาแนบไฟล์เอกสาร"); return; }
@@ -119,7 +119,7 @@ export default function QualityDocumentForm({ userId, catalog, initialDocumentId
     ...(!isManagement ? [{ key: "job", label: "ชื่องาน", children: jobOptions.find(item => item.value === values.job)?.label || "ไม่ระบุชื่องาน" }] : []),
     { key: "program", label: "หลักสูตร", children: curriculum?.label || "—" },
     { key: "level", label: "ระดับเอกสาร", children: catalog.levels.find(item => item.value === values.level)?.label || "—" },
-    ...(needsCriterion ? [{ key: "criterion", label: "เกณฑ์", children: values.criterion || "—" }] : []),
+    ...(canSelectCriterion ? [{ key: "criterion", label: "เกณฑ์", children: values.criterion || "ไม่ผูกเกณฑ์" }] : []),
     { key: "effectiveDate", label: "วันที่มีผลใช้บังคับ", children: values.effectiveDate || "—" },
   ];
 
@@ -165,12 +165,12 @@ export default function QualityDocumentForm({ userId, catalog, initialDocumentId
             </Form.Item>
             <Form.Item name="level" label="ระดับเอกสาร" rules={[{ required: true, message: "กรุณาเลือกระดับเอกสาร" }]}>
               <Select placeholder="เลือกระดับเอกสาร" options={catalog.levels}
-                onChange={level => { if (!requiresDocumentCriterion(level)) form.setFieldValue("criterion", undefined); }} />
+                onChange={level => { if (!supportsDocumentCriterion(level)) form.setFieldValue("criterion", undefined); }} />
             </Form.Item>
           </div>
-          {needsCriterion ? <Form.Item name="criterion" label={<>เกณฑ์ประเมิน{framework && <span className="ml-2 text-xs text-muted">{framework}</span>}</>}
-            rules={[{ required: true, message: "กรุณาเลือกเกณฑ์ประเมิน" }, { validator: (_, value: string | undefined) => !value || !framework || isValidCriterion(catalog, framework, value) ? Promise.resolve() : Promise.reject(new Error("กรุณาเลือกเกณฑ์ที่ตรงกับหลักสูตรจากรายการ")) }]}>
-            <Select disabled={saving || !framework} placeholder={framework ? `ค้นหารหัสหรือชื่อเกณฑ์ ${framework}` : "เลือกหลักสูตรก่อน"}
+          {canSelectCriterion ? <Form.Item name="criterion" label={<>เกณฑ์ประเมิน (ไม่บังคับ){framework && <span className="ml-2 text-xs text-muted">{framework}</span>}</>}
+            rules={[{ validator: (_, value: string | undefined) => !value || !framework || isValidCriterion(catalog, framework, value) ? Promise.resolve() : Promise.reject(new Error("กรุณาเลือกเกณฑ์ที่ตรงกับหลักสูตรจากรายการ")) }]}>
+            <Select disabled={saving || !framework} placeholder={framework ? `ไม่ผูกเกณฑ์ หรือค้นหาเกณฑ์ ${framework}` : "เลือกหลักสูตรก่อน"}
               options={framework ? catalog.criteria[framework] ?? [] : []} showSearch={{ optionFilterProp: "label" }} optionLabelProp="label" allowClear
               virtual={false} listHeight={256} classNames={{ popup: { root: "qa-criterion-dropdown" } }} notFoundContent="ไม่พบเกณฑ์ที่ค้นหา" />
           </Form.Item> : <p className="mb-6 text-sm text-muted">ระเบียบปฏิบัติ (SP) ไม่ต้องเลือกเกณฑ์ประเมิน</p>}

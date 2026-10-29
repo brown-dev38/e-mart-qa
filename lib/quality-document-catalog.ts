@@ -176,7 +176,7 @@ export function isValidCriterion(
   return catalog.criterionCodes[framework]?.includes(code) ?? false;
 }
 
-export function requiresDocumentCriterion(level: string | undefined): boolean {
+export function supportsDocumentCriterion(level: string | undefined): boolean {
   return level?.trim().toUpperCase() !== "SP";
 }
 
@@ -197,7 +197,7 @@ export function buildDocumentPrefix(
     !department ||
     !program ||
     !level ||
-    (requiresDocumentCriterion(level.value) && !isValidCriterion(catalog, program.framework, criterion))
+    (supportsDocumentCriterion(level.value) && criterion !== "" && !isValidCriterion(catalog, program.framework, criterion))
   ) {
     return null;
   }
@@ -212,7 +212,7 @@ export function buildDocumentPrefix(
     ...(department.hasSubDepartment && values.job ? [values.job] : []),
     program.value,
     level.value,
-    ...(requiresDocumentCriterion(level.value) ? [criterion] : []),
+    ...(supportsDocumentCriterion(level.value) && criterion ? [criterion] : []),
   ].join("-");
 }
 
@@ -267,7 +267,7 @@ export function readDocumentDraft(
         curriculum: program?.value,
         level: level?.value,
         criterion:
-          requiresDocumentCriterion(level?.value) && program && isValidCriterion(catalog, program.framework, criterion)
+          supportsDocumentCriterion(level?.value) && program && isValidCriterion(catalog, program.framework, criterion)
             ? criterion
             : undefined,
         title:

@@ -3,7 +3,7 @@ import { storeQualityFile, removeQualityFile } from "./quality-document-files";
 import { qualityActor } from "./quality-document-workflow";
 import { writeAudit } from "./audit-log";
 import type { DocumentSaveResult } from "@/types/quality-document";
-import { requiresDocumentCriterion } from "./quality-document-catalog";
+import { supportsDocumentCriterion } from "./quality-document-catalog";
 import { effectiveDateError } from "./quality-effective-date";
 import { activateQualityPublication } from "./quality-document-publication";
 import { saveScheduledQualityRevision } from "./quality-document-schedule";
@@ -31,12 +31,11 @@ export async function saveQualityDocument(
   const jobCode = field(formData, "job").toUpperCase();
   const programCode = field(formData, "program").toUpperCase();
   const levelCode = field(formData, "level").toUpperCase();
-  const needsCriterion = requiresDocumentCriterion(levelCode);
-  const criterionCode = needsCriterion ? field(formData, "criterion").toUpperCase() : "";
+  const criterionCode = supportsDocumentCriterion(levelCode) ? field(formData, "criterion").toUpperCase() : "";
   const title = field(formData, "title");
   const description = field(formData, "description");
 
-  if (!departmentCode || !programCode || !levelCode || (needsCriterion && !criterionCode)) {
+  if (!departmentCode || !programCode || !levelCode) {
     return { ok: false, error: "ข้อมูลสำหรับออกรหัสเอกสารไม่ครบถ้วน" };
   }
   if (!title) {
@@ -80,7 +79,7 @@ export async function saveQualityDocument(
     }
   }
 
-  const criterion = needsCriterion ? await prisma.docs_qa_criteria.findUnique({
+  const criterion = criterionCode ? await prisma.docs_qa_criteria.findUnique({
     where: {
       framework_id_code: {
         framework_id: program.framework_id,
@@ -88,7 +87,7 @@ export async function saveQualityDocument(
       },
     },
   }) : null;
-  if (needsCriterion && (!criterion || !criterion.is_active)) {
+  if (criterionCode && (!criterion || !criterion.is_active)) {
     return { ok: false, error: "ไม่พบเกณฑ์ที่เลือก หรือถูกปิดใช้งานแล้ว" };
   }
   if (criterion && !criterion.is_selectable) {
