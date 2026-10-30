@@ -195,7 +195,7 @@ export default function QualityDocumentForm({ userId, catalog, initialDocumentId
           <Form.Item name="effectiveDate" label="วันที่มีผลใช้บังคับ" rules={[{ required: true, message: "กรุณาระบุวันที่มีผลใช้บังคับ" }, {
             validator: (_, value) => { const error = effectiveDateError(value); return error ? Promise.reject(new Error(error)) : Promise.resolve(); },
           }]}>
-            <Input type="date" min={qualityToday()} />
+            <Input type="date" min="1000-01-01" />
           </Form.Item>
           <label className="mb-2 block text-[13px]">ไฟล์เอกสาร <span className="text-red-500">*</span></label>
           {needsAttachment && !files.length && <Alert className="mb-2" type="warning" showIcon title="เลือกไฟล์แนบอีกครั้ง ไฟล์ไม่ถูกเก็บในเครื่อง" />}

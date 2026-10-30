@@ -47,7 +47,7 @@ test("dated documents activate automatically and retain the previous effective r
       value.set("file", new File([bytes], "schedule.pdf", { type: "application/pdf" }));
       return value;
     };
-    for (const date of ["", "2026-02-30", "2000-01-01", "not-a-date"]) assert.equal((await saveQualityDocument(form(date), owner)).ok, false);
+    for (const date of ["", "2026-02-30", "0999-12-31", "not-a-date"]) assert.equal((await saveQualityDocument(form(date), owner)).ok, false);
     const missing = form(); missing.delete("file");
     assert.equal((await saveQualityDocument(missing, owner)).ok, false);
     assert.equal(await prisma.docs_qa_documents.count({ where: { department_id: department.id } }), 0);
@@ -65,7 +65,7 @@ test("dated documents activate automatically and retain the previous effective r
     assert.equal(initialDetail.versions[0].state, "DRAFT");
     assert.equal(initialDetail.versions[0].canReschedule, true);
     const command = (revision, date) => ({ revisionId: String(revision.id), lockVersion: revision.lock_version, effectiveDate: date });
-    for (const date of ["", "2026-02-30", "2000-01-01", "not-a-date"]) await assert.rejects(rescheduleQualityRevision(command(first, date), owner));
+    for (const date of ["", "2026-02-30", "0999-12-31", "not-a-date"]) await assert.rejects(rescheduleQualityRevision(command(first, date), owner));
     await assert.rejects(rescheduleQualityRevision(command(first, later), outsider));
     await assert.rejects(rescheduleQualityRevision(command(first, later), disabled));
     ok(await rescheduleQualityRevision(command(first, later), owner));
@@ -112,10 +112,11 @@ test("dated documents activate automatically and retain the previous effective r
     assert.equal(edits.filter(row => row.status === "fulfilled").length, 1, "concurrent edits must reject the stale copy");
     assert.equal((await prisma.docs_qa_documents.findUniqueOrThrow({ where: { id: document.id } })).current_version, "000");
     const rescheduledSecond = await prisma.docs_qa_document_revisions.findUniqueOrThrow({ where: { id: second.id } });
-    ok(await rescheduleQualityRevision(command(rescheduledSecond, today), owner));
+    ok(await rescheduleQualityRevision(command(rescheduledSecond, "2000-01-01"), owner));
     ok({ ok: !!(await qualityRevisionFile(String(second.id), outsider)) });
     document = await prisma.docs_qa_documents.findUniqueOrThrow({ where: { id: document.id } });
     assert.equal(document.current_version, "001"); assert.equal(document.title, `${marker} next`);
+    assert.equal(document.effective_date.toISOString().slice(0, 10), "2000-01-01");
     assert.equal((await prisma.docs_qa_document_revisions.findUniqueOrThrow({ where: { id: first.id } })).status, "SUPERSEDED");
     await assert.rejects(qualityRevisionFile(String(first.id), outsider));
     assert.deepEqual(await readFile(path.join(root, original.path)), bytes, "the old file is retained unchanged");
@@ -131,8 +132,10 @@ test("dated documents activate automatically and retain the previous effective r
     const dateAudit = await prisma.audit_logs.findFirstOrThrow({ where: { entity_id: saved.documentId, summary: "เปลี่ยนวันที่มีผลใช้ฉบับ 001" } });
     assert.equal(dateAudit.details.previousDate, tomorrow);
     assert.equal(dateAudit.details.effectiveDate, later);
-    const immediate = ok(await saveQualityDocument(form(today), owner)); assert.equal(immediate.status, "PUBLISHED");
-    const immediateVersion = ok(await saveQualityDocument(form(today, immediate.documentId), owner)); assert.equal(immediateVersion.status, "PUBLISHED");
+    const immediate = ok(await saveQualityDocument(form("2000-01-01"), owner)); assert.equal(immediate.status, "PUBLISHED");
+    assert.equal((await prisma.docs_qa_documents.findUniqueOrThrow({ where: { id: BigInt(immediate.documentId) } })).effective_date.toISOString().slice(0, 10), "2000-01-01");
+    const immediateVersion = ok(await saveQualityDocument(form("2001-01-01", immediate.documentId), owner)); assert.equal(immediateVersion.status, "PUBLISHED");
+    assert.equal((await prisma.docs_qa_documents.findUniqueOrThrow({ where: { id: BigInt(immediate.documentId) } })).effective_date.toISOString().slice(0, 10), "2001-01-01");
     assert.equal((await prisma.docs_qa_documents.findUniqueOrThrow({ where: { id: BigInt(immediate.documentId) } })).current_version, "001");
     for (let index = 2; index <= 4; index++) ok(await saveQualityDocument(form(today, immediate.documentId), owner));
     const compact = await qualityDocumentVersions(immediate.documentId, owner);

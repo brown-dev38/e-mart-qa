@@ -162,7 +162,7 @@ function RevisionPanel({ revision, detail, onRun, pending, onSubmission, onClose
         {revision.canReview && <div className="qa-editor-file">
           <label className="qa-field-label" htmlFor="review-comment">ความเห็นผู้ตรวจ</label><Input.TextArea id="review-comment" value={comment} onChange={e => setComment(e.target.value)} maxLength={2000} autoSize={{ minRows: 3, maxRows: 5 }} disabled={pending} placeholder="หากส่งกลับ ให้ระบุจุดที่ต้องแก้ไข" />
           <Checkbox className="mt-3 text-sm" checked={checked} onChange={e => setChecked(e.target.checked)} disabled={pending}>ตรวจข้อมูลและไฟล์แล้ว</Checkbox>
-          {revision.canApprove && <div className="mt-3"><label className="qa-field-label" htmlFor="approval-effective-date">วันที่มีผลใช้บังคับ *</label><Input id="approval-effective-date" type="date" value={effectiveDate} min={detail.today} disabled={pending} onChange={e => setEffectiveDate(e.target.value)} /></div>}
+          {revision.canApprove && <div className="mt-3"><label className="qa-field-label" htmlFor="approval-effective-date">วันที่มีผลใช้บังคับ *</label><Input id="approval-effective-date" type="date" value={effectiveDate} min="1000-01-01" disabled={pending} onChange={e => setEffectiveDate(e.target.value)} /></div>}
         </div>}
       </div>
     </div>

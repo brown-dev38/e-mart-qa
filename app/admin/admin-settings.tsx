@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition, type Key } from "react";
 import { useRouter } from "next/navigation";
 import {
   Button,
@@ -57,6 +57,8 @@ const LEVEL_LABELS: Record<number, string> = {
   3: "ข้อเกณฑ์ (Standard)",
 };
 
+const CRITERIA_EXPANSION_KEY = "e-smart-qa:settings-criteria:expanded";
+
 type Row = Record<string, unknown>;
 type Option = { value: string | number; label: string };
 type FormValues = Record<string, unknown>;
@@ -70,6 +72,7 @@ type FieldConfig = {
   min?: number;
   max?: number;
   placeholder?: string;
+  extra?: string;
   options?: Option[] | ((values: FormValues) => Option[]);
   full?: boolean;
 };
@@ -534,6 +537,7 @@ function buildConfig(entity: MasterEntity, data: MasterData): EntityConfig {
             label: "เกณฑ์แม่",
             type: "select",
             placeholder: "ไม่ระบุ (เป็นหมวดหลัก)",
+            extra: "หัวข้อที่เกณฑ์นี้อยู่ภายใต้ เช่น W1.1 ใช้ W1 เป็นเกณฑ์แม่ เลือกกรอบเกณฑ์ก่อน หรือเว้นว่างสำหรับหมวดหลัก",
             options: (values) => {
               const frameworkId = Number(values.framework_id);
               return data.criteria
@@ -676,6 +680,7 @@ function FieldItem({
   field: FieldConfig;
   form: FormInstance;
 }) {
+  const values = Form.useWatch((store: FormValues) => store, { form, preserve: true }) ?? {};
   const rules = field.required
     ? [{ required: true, message: `กรุณากรอก${field.label}` }]
     : undefined;
@@ -725,32 +730,16 @@ function FieldItem({
     }
   };
 
-  if (field.type === "select" && typeof field.options === "function") {
-    return (
-      <Form.Item noStyle shouldUpdate>
-        {() => (
-          <Form.Item
-            name={field.key}
-            label={field.label}
-            rules={rules}
-            className={field.full ? "sm:col-span-2" : undefined}
-          >
-            {renderInput(form.getFieldsValue(true) as FormValues)}
-          </Form.Item>
-        )}
-      </Form.Item>
-    );
-  }
-
   return (
     <Form.Item
       name={field.key}
       label={field.label}
       rules={rules}
+      extra={field.extra}
       valuePropName={field.type === "switch" ? "checked" : undefined}
       className={field.full ? "sm:col-span-2" : undefined}
     >
-      {renderInput({})}
+      {renderInput(values)}
     </Form.Item>
   );
 }
@@ -773,7 +762,28 @@ export default function AdminSettings({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
   const [pending, startTransition] = useTransition();
+  const [expandedCriteria, setExpandedCriteria] = useState<readonly Key[]>([]);
   const rows = useMemo(() => config.rows(data), [config, data]);
+
+  useEffect(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(CRITERIA_EXPANSION_KEY) ?? "[]");
+      if (Array.isArray(saved)) {
+        setExpandedCriteria(saved.filter((key): key is number => Number.isSafeInteger(key) && key > 0));
+      }
+    } catch {
+      // Start collapsed when saved preferences are unavailable.
+    }
+  }, []);
+
+  function rememberExpandedCriteria(keys: readonly Key[]) {
+    setExpandedCriteria(keys);
+    try {
+      localStorage.setItem(CRITERIA_EXPANSION_KEY, JSON.stringify(keys));
+    } catch {
+      // Expanding still works when browser storage is unavailable.
+    }
+  }
 
   function openCreate() {
     setEditing(null);
@@ -902,7 +912,10 @@ export default function AdminSettings({
           size="middle"
           pagination={{ pageSize: 8, showSizeChanger: false }}
           scroll={{ x: "max-content" }}
-          expandable={{ defaultExpandAllRows: true }}
+          expandable={entity === "criteria" ? {
+            expandedRowKeys: expandedCriteria,
+            onExpandedRowsChange: rememberExpandedCriteria,
+          } : { defaultExpandAllRows: true }}
         />
       </Card>
 
@@ -922,6 +935,11 @@ export default function AdminSettings({
           form={form}
           layout="vertical"
           onFinish={handleFinish}
+          onValuesChange={(changed) => {
+            if (entity === "criteria" && "framework_id" in changed) {
+              form.setFieldValue("parent_id", undefined);
+            }
+          }}
           preserve={false}
           className="mt-6"
         >

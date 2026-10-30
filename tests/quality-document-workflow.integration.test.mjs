@@ -414,7 +414,7 @@ test("quality document approval, revision history, permissions and concurrent re
     assert.equal((await transitionQualityRevision(command(combinedDraft, "approve"), author)).ok, false);
     ok(await transitionQualityRevision(command(combinedDraft, "review"), reviewer));
     combinedDraft = (await qualityWorkflowDetail(combinedId, author)).revisions[0];
-    ok(await transitionQualityRevision(command(combinedDraft, "approve"), reviewer));
+    ok(await transitionQualityRevision({ ...command(combinedDraft, "approve"), effectiveDate: "2000-01-01" }, reviewer));
     assert.equal((await qualityWorkflowDetail(combinedId, author)).currentVersion, "000");
 
     // Clause 5.4: complete per-revision controls, registry-only changes, delayed
@@ -423,7 +423,7 @@ test("quality document approval, revision history, permissions and concurrent re
     const firstControlled = control.revisions[0];
     assert.equal(firstControlled.reviewedBy, users[1].username);
     assert.equal(firstControlled.approvedBy, users[1].username);
-    assert.equal(firstControlled.effectiveDate, qualityToday());
+    assert.equal(firstControlled.effectiveDate, "2000-01-01");
     assert.ok(firstControlled.changeReason);
     const immutableApproval = await prisma.docs_qa_document_revisions.findUniqueOrThrow({ where: { id: BigInt(firstControlled.id) } });
     const immutableRegister = await prisma.docs_qa_documents.findUniqueOrThrow({ where: { id: BigInt(combinedId) }, select: {
@@ -459,7 +459,7 @@ test("quality document approval, revision history, permissions and concurrent re
     ok(await transitionQualityRevision(command(combinedDraft, "review"), reviewer));
     combinedDraft = (await qualityWorkflowDetail(combinedId, author)).revisions[0];
     assert.equal((await transitionQualityRevision({ ...command(combinedDraft, "approve"), effectiveDate: "2026-02-30" }, reviewer)).ok, false);
-    assert.equal((await transitionQualityRevision({ ...command(combinedDraft, "approve"), effectiveDate: "2000-01-01" }, reviewer)).ok, false);
+    assert.equal((await transitionQualityRevision({ ...command(combinedDraft, "approve"), effectiveDate: "0999-12-31" }, reviewer)).ok, false);
     const tomorrow = qualityToday(new Date(Date.now() + 86400000));
     ok(await transitionQualityRevision({ ...command(combinedDraft, "approve"), effectiveDate: tomorrow }, reviewer));
     control = await qualityWorkflowDetail(combinedId, author);

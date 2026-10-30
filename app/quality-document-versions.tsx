@@ -110,9 +110,9 @@ export default function QualityDocumentVersions({ documentId, onClose, onChanged
       okButtonProps={{ disabled: !!validation || effectiveDate === editing?.effectiveDate || pending }}>
       <p className="mb-3 text-sm text-muted">วันที่เดิม: {date(editing?.effectiveDate ?? null)} · ฉบับปัจจุบันจะใช้ต่อจนถึงวันที่ใหม่</p>
       <label htmlFor="revision-effective-date" className="mb-2 block text-sm">วันที่มีผลใช้ใหม่</label>
-      <Input id="revision-effective-date" type="date" value={effectiveDate} min={detail?.today} disabled={saving} status={validation ? "error" : undefined} aria-invalid={!!validation} aria-describedby="revision-effective-date-help" onChange={event => setEffectiveDate(event.target.value)} />
-      <p id="revision-effective-date-help" role={validation ? "alert" : undefined} className={`mt-2 text-xs ${validation ? "text-red-600" : "text-muted"}`}>{validation || "เลือกวันนี้หรือวันถัดไป ตามวันที่ประเทศไทย"}</p>
-      {detail && effectiveDate === detail.today && <Alert className="mt-3" type="info" showIcon title="เมื่อบันทึก ฉบับนี้จะมีผลใช้ทันที และฉบับปัจจุบันจะยกเลิกใช้" />}
+      <Input id="revision-effective-date" type="date" value={effectiveDate} min="1000-01-01" disabled={saving} status={validation ? "error" : undefined} aria-invalid={!!validation} aria-describedby="revision-effective-date-help" onChange={event => setEffectiveDate(event.target.value)} />
+      <p id="revision-effective-date-help" role={validation ? "alert" : undefined} className={`mt-2 text-xs ${validation ? "text-red-600" : "text-muted"}`}>{validation || "เลือกวันที่ย้อนหลัง วันนี้ หรือวันถัดไปได้ ตามวันที่ประเทศไทย"}</p>
+      {detail && !validation && effectiveDate <= detail.today && <Alert className="mt-3" type="info" showIcon title="เมื่อบันทึก ฉบับนี้จะมีผลใช้ทันที และฉบับปัจจุบันจะยกเลิกใช้" />}
       {saveError && <Alert className="mt-3" type="error" showIcon title={saveError} action={<Button size="small" disabled={saving} onClick={() => { setEditing(null); setAttempt(value => value + 1); }}>โหลดรายละเอียดใหม่</Button>} />}
     </Modal>
   </>;

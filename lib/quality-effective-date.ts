@@ -11,6 +11,5 @@ export function isQualityCalendarDate(value: unknown): value is string {
 export function effectiveDateError(value: unknown): string | null {
   if (value === "" || value == null) return "กรุณาระบุวันที่มีผลใช้บังคับ";
   if (!isQualityCalendarDate(value)) return "วันที่มีผลใช้บังคับไม่ถูกต้อง";
-  if (value < qualityToday()) return "วันที่มีผลใช้บังคับต้องเป็นวันนี้หรือวันถัดไป";
   return null;
 }

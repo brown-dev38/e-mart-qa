@@ -49,7 +49,7 @@ test("dated SP creation and revision replacement work through the running Server
       value.set("file", new File([bytes], "procedure.pdf", { type: "application/pdf" }));
       return value;
     };
-    for (const date of ["", "2026-02-30", "2000-01-01"]) assert.equal((await action("saveQualityDocumentAction", [form(date)])).ok, false);
+    for (const date of ["", "2026-02-30", "0999-12-31"]) assert.equal((await action("saveQualityDocumentAction", [form(date)])).ok, false);
     const noAttachment = form(); noAttachment.delete("file");
     assert.equal((await action("saveQualityDocumentAction", [noAttachment])).ok, false);
     for (const jobCode of ["UNKNOWN", "OLD"]) {

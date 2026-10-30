@@ -6,6 +6,7 @@ export { ActionError as WorkflowError, currentActor as qualityActor } from "./cu
 import { removeQualityFile, revisionFileUrl, revisionReviewFileUrl, storeQualityFile, snapshotQualityFile, submissionFileUrl, submissionReviewFileUrl, verifiedSubmissionBytes } from "./quality-document-files";
 import type { ApprovalQueueItem, QualityReviewItem, QualityWorkflowDetail, RevisionCommand, WorkflowResult } from "@/types/quality-document";
 import { activateQualityPublication, nextQualityRevision, qualityToday, refreshQualityPublications } from "./quality-document-publication";
+import { effectiveDateError } from "./quality-effective-date";
 
 type Transaction = Prisma.TransactionClient;
 function fail(message: string): never { throw new WorkflowError(message); }
@@ -204,9 +205,9 @@ export async function transitionQualityRevision(command: RevisionCommand, userId
           if (!submission.reviewer_id) fail("กรุณาบันทึกการทบทวนผ่านก่อนอนุมัติ");
           if (!submission.change_note?.trim() || !submission.change_reason?.trim()) fail("ข้อมูลสาระที่แก้ไขหรือเหตุผลไม่ครบ กรุณาส่งกลับแก้ไข");
           const effectiveInput = command.effectiveDate;
-          if (typeof effectiveInput !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveInput)) fail("กรุณาระบุวันที่มีผลใช้บังคับ");
+          const dateError = effectiveDateError(effectiveInput);
+          if (dateError) fail(dateError);
           const effectiveDate = new Date(`${effectiveInput}T00:00:00Z`);
-          if (!Number.isFinite(effectiveDate.getTime()) || effectiveDate.toISOString().slice(0, 10) !== effectiveInput || effectiveInput < qualityToday(now)) fail("วันที่มีผลใช้ต้องเป็นวันที่ถูกต้องและไม่ก่อนวันที่อนุมัติ");
           const next = nextQualityRevision(doc.approved_revision_no);
           if (next > 999) fail("เลขฉบับครบ 999 แล้ว");
           if (!revision.file_path || !revision.file_name) fail("ไม่พบไฟล์เอกสารสำหรับอนุมัติ");
